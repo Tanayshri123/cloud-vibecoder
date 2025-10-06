@@ -1,13 +1,45 @@
 # Cloud Vibecoder
 
-A full-stack application that generates implementation plans for GitHub repositories based on natural language prompts. The project consists of a React Native mobile app and a FastAPI backend.
+A full-stack application that generates implementation plans for GitHub repositories based on natural language prompts. The project consists of a React Native mobile app and a FastAPI backend deployed on Render.
+
+## 🎯 What It Does
+
+Cloud Vibecoder takes your natural language requests and creates structured implementation plans for GitHub repositories. Here's how it works:
+
+1. **Input**: You provide a GitHub repository URL and describe what you want to change
+2. **Processing**: The backend receives your prompt and repository information
+3. **Output**: It generates a detailed plan with steps to implement your request
+
+## 🔄 Current Flow
+
+### User Input
+- **GitHub Repository**: Enter any GitHub repo URL (e.g., `https://github.com/facebook/react`)
+- **Change Request**: Describe what you want to do in plain English (e.g., "Add dark mode toggle to the settings page")
+
+### What Happens Next
+1. **Mobile App** sends the repository URL and prompt to the backend API
+2. **Backend** receives the data and processes it (currently returns a mock response)
+3. **Response** includes:
+   - A plan title based on your prompt
+   - A summary explaining the approach
+   - Step-by-step implementation instructions
+
+### Current Backend Behavior
+The backend currently returns a **mock response** that demonstrates the structure:
+- Takes your prompt and creates a plan title
+- Generates a generic summary
+- Provides 4 standard steps:
+  1. Inspect the repository
+  2. Locate relevant code areas
+  3. Draft modification steps
+  4. Generate diff and propose PR
 
 ## Project Structure
 
 ```
 cloud-vibecoder/
-├── backend/           # FastAPI backend server
-│   ├── main.py       # Main API server
+├── backend/           # FastAPI backend server (deployed on Render)
+│   ├── main.py       # Main API server with /api/plan endpoint
 │   └── .venv/        # Python virtual environment
 ├── mobile/           # React Native mobile app
 │   ├── app/          # App screens and navigation
@@ -26,9 +58,9 @@ cloud-vibecoder/
 - **Expo CLI** (`npm install -g @expo/cli`)
 - **Git**
 
-### 1. Backend Setup
+### 1. Backend Setup (Optional - Already Deployed)
 
-Navigate to the backend directory and set up the Python environment:
+The backend is already deployed at `https://cloud-vibecoder-1.onrender.com`. If you want to run locally:
 
 ```bash
 cd backend
@@ -49,11 +81,7 @@ pip install fastapi uvicorn pydantic python-multipart
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-The backend will be available at `http://localhost:8000`
-
 ### 2. Mobile App Setup
-
-Navigate to the mobile directory and install dependencies:
 
 ```bash
 cd mobile
@@ -71,14 +99,15 @@ This will open the Expo development tools. You can then:
 - Press `w` to open in web browser
 - Scan the QR code with Expo Go app on your physical device
 
-## 📱 Features
+## Features
 
-- **Smart IP Detection**: Automatically detects your local network IP for seamless backend connection
+- **Production Ready**: Backend deployed on Render with automatic HTTPS
 - **Cross-Platform**: Works on iOS, Android, and Web
-- **Real-time Communication**: Mobile app communicates with FastAPI backend
+- **Environment Configuration**: Easy switching between local and production APIs
 - **Modern UI**: Clean, responsive interface with proper theming
+- **Real-time Communication**: Mobile app communicates with deployed FastAPI backend
 
-## 🔧 API Endpoints
+## API Endpoints
 
 ### POST `/api/plan`
 
@@ -87,7 +116,7 @@ Generates an implementation plan based on repository and prompt.
 **Request Body:**
 ```json
 {
-  "repo": "https://github.com/username/repository",
+  "repo": "https://github.com/facebook/react",
   "prompt": "Add dark mode toggle to the settings page"
 }
 ```
@@ -95,12 +124,12 @@ Generates an implementation plan based on repository and prompt.
 **Response:**
 ```json
 {
-  "repo": "https://github.com/username/repository",
+  "repo": "https://github.com/facebook/react",
   "plan": {
     "title": "Plan for 'Add dark mode toggle to the settings page'",
     "summary": "This mock plan outlines how Cloud Vibecoder will implement your request.",
     "steps": [
-      "Inspect repository: https://github.com/username/repository",
+      "Inspect repository: https://github.com/facebook/react",
       "Locate relevant code areas for 'Add dark mode toggle to the settings page'",
       "Draft modification steps",
       "Generate diff and propose PR"
@@ -109,44 +138,60 @@ Generates an implementation plan based on repository and prompt.
 }
 ```
 
+## Configuration
+
+### Environment Variables
+
+The app uses environment variables for API configuration:
+
+**Production (Default):**
+- Uses `https://cloud-vibecoder-1.onrender.com`
+
+**Local Development:**
+- Create a `.env` file in the mobile directory:
+  ```
+  EXPO_PUBLIC_API_URL=http://localhost:8000
+  ```
+
 ## Development
 
 ### Backend Development
 
 The backend uses FastAPI with automatic API documentation available at:
-- **Swagger UI**: `http://localhost:8000/docs`
-- **ReDoc**: `http://localhost:8000/redoc`
+- **Swagger UI**: `https://cloud-vibecoder-1.onrender.com/docs`
+- **ReDoc**: `https://cloud-vibecoder-1.onrender.com/redoc`
 
 ### Mobile Development
 
 The mobile app uses:
 - **Expo Router** for navigation
 - **TypeScript** for type safety
-- **Expo Network** for IP detection
+- **Environment variables** for API configuration
 - **React Native** for cross-platform UI
 
-### Network Configuration
+## Current Status
 
-The app automatically detects your local IP address for backend communication:
-- **iOS Simulator**: Uses `localhost`
-- **Android Emulator**: Uses `10.0.2.2`
-- **Physical Devices**: Uses detected local network IP
-- **Web**: Uses `localhost`
+### ✅ What's Working
+- Mobile app with clean UI
+- Backend API deployed and accessible
+- Environment-based configuration
+- Cross-platform compatibility
+- Mock response generation
+
+### 🚧 What's Next (Future Development)
+- **AI Integration**: Replace mock responses with actual AI-powered code analysis
+- **Repository Analysis**: Connect to GitHub API to analyze actual code
+- **Code Generation**: Generate actual code changes based on prompts
+- **Git Integration**: Create actual pull requests with proposed changes
 
 ## Troubleshooting
-
-### Backend Issues
-
-1. **Port already in use**: Change the port in the uvicorn command
-2. **CORS errors**: The backend is configured to accept requests from any origin
-3. **Module not found**: Ensure virtual environment is activated and dependencies are installed
 
 ### Mobile App Issues
 
 1. **Network request failed**: 
-   - Ensure backend is running
-   - Check that both devices are on the same network
-   - Verify IP detection in console logs
+   - Ensure you have internet connection
+   - Check that the backend is accessible at `https://cloud-vibecoder-1.onrender.com`
+   - Verify API configuration in console logs
 
 2. **Expo issues**:
    - Clear Expo cache: `expo start -c`
@@ -156,7 +201,13 @@ The app automatically detects your local IP address for backend communication:
    - Delete `node_modules` and `package-lock.json`
    - Run `npm install` again
 
-## 📦 Dependencies
+### Backend Issues
+
+1. **API not responding**: Check Render deployment status
+2. **CORS errors**: Backend is configured to accept requests from any origin
+3. **Module not found**: Dependencies are managed by Render automatically
+
+## Dependencies
 
 ### Backend
 - `fastapi` - Web framework
@@ -168,7 +219,6 @@ The app automatically detects your local IP address for backend communication:
 - `expo` - Development platform
 - `react-native` - Mobile framework
 - `expo-router` - Navigation
-- `expo-network` - Network utilities
 - `typescript` - Type safety
 
 ## Support
@@ -177,4 +227,12 @@ If you encounter any issues:
 1. Check the troubleshooting section above
 2. Review the console logs for error messages
 3. Ensure all dependencies are properly installed
-4. Verify network connectivity between mobile app and backend
+4. Verify network connectivity
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Test on both backend and mobile
+5. Submit a pull request

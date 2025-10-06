@@ -1,41 +1,20 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, Button, ScrollView, StyleSheet, ActivityIndicator, Alert, Platform } from 'react-native';
-import * as Network from 'expo-network';  //this pulls the local IP address of the device so that we can connect to the local backend
+import React, { useState } from 'react';
+import { View, Text, TextInput, Button, ScrollView, StyleSheet, ActivityIndicator, Alert } from 'react-native';
+
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://cloud-vibecoder-1.onrender.com';
 
 export default function IndexScreen() {
   const [repo, setRepo] = useState('');
   const [prompt, setPrompt] = useState('');
   const [plan, setPlan] = useState<any>(null);
   const [loading, setLoading] = useState(false);
-  const [localIP, setLocalIP] = useState<string>('');
 
-  useEffect(() => {
-    const getLocalIP = async () => {
-      try {
-        // Ask Expo for the device’s local IP (e.g., your laptop or phone IP on Wi-Fi)
-        const ip = await Network.getIpAddressAsync();
-        console.log('Detected local IP:', ip);
-        setLocalIP(ip);
-      } catch (error) {
-        console.warn('Could not get IP address:', error);
-        // Fallbacks
-        if (Platform.OS === 'android') setLocalIP('10.0.2.2');
-        else setLocalIP('localhost');
-      }
-    };
-    getLocalIP();
-  }, []);
 
   const handleSubmit = async () => {
-    if (!localIP) {
-      Alert.alert('Error', 'Unable to detect local IP address. Please check your network connection.');
-      return;
-    }
-
-    console.error(localIP);
+    console.log(`Fetching from: ${BASE_URL}/api/plan`);
     setLoading(true);
     try {
-      const res = await fetch(`http://${localIP}:8000/api/plan`, {
+      const res = await fetch(`${BASE_URL}/api/plan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ repo, prompt }),
@@ -46,7 +25,7 @@ export default function IndexScreen() {
       console.error('Network error:', err);
       Alert.alert(
         'Connection Error',
-        `Failed to connect to backend at ${localIP}:8000. Make sure the backend server is running and both devices share Wi-Fi.`
+        `Failed to connect to backend at ${BASE_URL}. Please check your internet connection.`
       );
     } finally {
       setLoading(false);
