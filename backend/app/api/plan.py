@@ -1,15 +1,14 @@
-from fastapi import FastAPI
+from fastapi import APIRouter
 from pydantic import BaseModel
 
-app = FastAPI()
+router = APIRouter()
 
-# Schema describing the data we expect from the frontend
 class PromptRequest(BaseModel):
-    repo: str # github repo url
-    prompt: str #the user's NLP promtp
+    repo: str  # GitHub repo URL
+    prompt: str  # User's NLP prompt
 
-# Endpoint: receives prompt + repo, returns mock plan
-@app.post("/api/plan")
+#we have to replace this with the actual plan generation logic
+@router.post("/plan")
 async def generate_plan(req: PromptRequest):
     return {
         "repo": req.repo,
