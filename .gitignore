@@ -252,3 +252,6 @@ tmp/
 dist/
 build/
 coverage/
+
+# Environment
+.env
