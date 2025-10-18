@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, Button, ScrollView, StyleSheet, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Alert } from 'react-native';
+import { router } from 'expo-router';
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://cloud-vibecoder-1.onrender.com';
 
@@ -34,23 +35,44 @@ export default function IndexScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Cloud Vibecoder</Text>
+      <View style={styles.header}>
+        <Text style={styles.title}>Cloud Vibecoder</Text>
+        <TouchableOpacity 
+          style={styles.logoutButton}
+          onPress={() => router.push('/welcome')}
+        >
+          <Text style={styles.logoutText}>Logout</Text>
+        </TouchableOpacity>
+      </View>
 
-      <TextInput
-        placeholder="Enter GitHub Repo"
-        value={repo}
-        onChangeText={setRepo}
-        style={styles.input}
-      />
-      <TextInput
-        placeholder="Describe your change request"
-        value={prompt}
-        onChangeText={setPrompt}
-        style={styles.input}
-      />
-      <Button title="Generate Plan" onPress={handleSubmit} />
-
-      {loading && <ActivityIndicator style={{ marginTop: 20 }} />}
+      <View style={styles.form}>
+        <TextInput
+          placeholder="Enter GitHub Repo URL"
+          value={repo}
+          onChangeText={setRepo}
+          style={styles.input}
+          autoCapitalize="none"
+        />
+        <TextInput
+          placeholder="Describe your change request"
+          value={prompt}
+          onChangeText={setPrompt}
+          style={[styles.input, styles.textArea]}
+          multiline
+          numberOfLines={3}
+        />
+        <TouchableOpacity 
+          style={[styles.submitButton, loading && styles.submitButtonDisabled]}
+          onPress={handleSubmit}
+          disabled={loading}
+        >
+          {loading ? (
+            <ActivityIndicator color="white" />
+          ) : (
+            <Text style={styles.submitButtonText}>Generate Plan</Text>
+          )}
+        </TouchableOpacity>
+      </View>
 
       {plan && (
         <View style={styles.planBox}>
@@ -66,23 +88,110 @@ export default function IndexScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 20 },
-  title: { fontSize: 26, fontWeight: '600', marginBottom: 24, textAlign: 'center' },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
+  container: { 
+    flexGrow: 1,
+    backgroundColor: '#f8f9fa',
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 32,
+    paddingTop: 20,
+  },
+  title: { 
+    fontSize: 28, 
+    fontWeight: 'bold', 
+    color: '#1a1a1a',
+  },
+  logoutButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#ff3b30',
     borderRadius: 8,
-    padding: 10,
-    marginBottom: 12,
+  },
+  logoutText: {
     color: 'white',
+    fontWeight: '600',
+  },
+  form: {
+    marginBottom: 24,
+  },
+  input: {
+    backgroundColor: 'white',
+    borderWidth: 1,
+    borderColor: '#e1e5e9',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  textArea: {
+    height: 80,
+    textAlignVertical: 'top',
+  },
+  submitButton: {
+    backgroundColor: '#007AFF',
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: 'center',
+    marginTop: 8,
+    shadowColor: '#007AFF',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  submitButtonDisabled: {
+    backgroundColor: '#ccc',
+  },
+  submitButtonText: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: '600',
   },
   planBox: {
     marginTop: 24,
-    padding: 16,
-    backgroundColor: '#f9f9f9',
-    borderRadius: 10,
+    padding: 20,
+    backgroundColor: 'white',
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
-  planTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 8 },
-  planSummary: { color: '#555', marginBottom: 10 },
-  planStep: { marginBottom: 4 },
+  planTitle: { 
+    fontSize: 22, 
+    fontWeight: 'bold', 
+    marginBottom: 12,
+    color: '#1a1a1a',
+  },
+  planSummary: { 
+    color: '#666', 
+    marginBottom: 16,
+    fontSize: 16,
+    lineHeight: 22,
+  },
+  planStep: { 
+    marginBottom: 8,
+    fontSize: 15,
+    color: '#333',
+    lineHeight: 20,
+  },
 });
