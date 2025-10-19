@@ -47,6 +47,11 @@ class LLMService:
     def _create_crs_prompt(self, request: CRSRequest) -> str:
         """Create a structured prompt for CRS generation"""
         
+        clarifications_context = ""
+        if request.clarification_answers:
+            answered = [f"- Q: {a.question}\n  A: {a.answer}" for a in request.clarification_answers]
+            clarifications_context = "Previously answered clarifications:\n" + "\n".join(answered) + "\n\n"
+
         prompt = f"""
 You are an expert software engineer tasked with analyzing change requests and creating detailed Change Request Specifications (CRS).
 
@@ -63,6 +68,7 @@ User Request: "{request.user_prompt}"
 
 {f"Repository Context: {request.repository_url}" if request.repository_url else ""}
 {f"Additional Context: {request.additional_context}" if request.additional_context else ""}
+{clarifications_context}
 
 Please respond with a JSON object following this exact structure:
 {{
@@ -112,6 +118,11 @@ Guidelines:
 - Consider the blast radius (how many systems/components might be affected)
 - Provide realistic confidence scores
 - Focus on what can be tested and validated
+
+Rules for clarifying questions:
+- Ask at most {request.max_questions} clarifying questions.
+- Only ask when critical to proceed; prefer 1-3 concise questions max.
+- If clarifications already answered above cover the gaps, return zero questions and set requires_clarification=false.
 
 Respond with ONLY the JSON object, no additional text.
 """

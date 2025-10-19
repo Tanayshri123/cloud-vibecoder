@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from app.models.crs_model import CRSRequest, CRSResponse
+from app.models.crs_model import CRSRequest, CRSResponse, ClarificationAnswer
 from app.services.llm_service import LLMService
 import logging
 
@@ -12,6 +12,8 @@ class CRSEndpointRequest(BaseModel):
     prompt: str
     repo_url: str = None
     context: str = None
+    answers: list[ClarificationAnswer] | None = None
+    max_questions: int | None = 3
 
 @router.post("/crs", response_model=CRSResponse)
 async def generate_crs(request: CRSEndpointRequest):
@@ -33,7 +35,9 @@ async def generate_crs(request: CRSEndpointRequest):
         crs_request = CRSRequest(
             user_prompt=request.prompt,
             repository_url=request.repo_url,
-            additional_context=request.context
+            additional_context=request.context,
+            clarification_answers=request.answers or [],
+            max_questions=request.max_questions or 3
         )
         
         # Generate CRS using LLM service

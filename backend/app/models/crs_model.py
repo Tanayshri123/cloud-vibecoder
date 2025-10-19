@@ -63,11 +63,18 @@ class ChangeRequestSpec(BaseModel):
     confidence_score: float = Field(ge=0.0, le=1.0, description="Confidence in the CRS accuracy (0-1)")
     requires_clarification: bool = Field(default=False, description="Whether clarification is needed before proceeding")
 
+class ClarificationAnswer(BaseModel):
+    """Answer provided by the user to a clarifying question"""
+    question: str = Field(description="The clarifying question being answered")
+    answer: str = Field(description="Short answer to the question")
+
 class CRSRequest(BaseModel):
     """Input request for CRS generation"""
     user_prompt: str = Field(description="Raw user prompt describing the change")
     repository_url: Optional[str] = Field(default=None, description="GitHub repository URL for context")
     additional_context: Optional[str] = Field(default=None, description="Additional context about the project")
+    clarification_answers: List[ClarificationAnswer] = Field(default_factory=list, description="Answers to previous clarifying questions")
+    max_questions: int = Field(default=3, ge=0, le=3, description="Maximum number of clarifying questions to ask (0-3)")
 
 class CRSResponse(BaseModel):
     """Response containing the generated CRS"""
