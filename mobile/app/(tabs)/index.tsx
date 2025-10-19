@@ -19,6 +19,17 @@ interface CRS {
   requires_clarification: boolean;
 }
 
+interface ClarifyingQuestion {
+  question: string;
+  context: string;
+  critical: boolean;
+}
+
+interface ClarificationAnswer {
+  question: string;
+  answer: string;
+}
+
 interface PlanStep {
   step_number: number;
   title: string;
@@ -54,7 +65,9 @@ export default function IndexScreen() {
   const [crs, setCrs] = useState<CRS | null>(null);
   const [plan, setPlan] = useState<ImplementationPlan | null>(null);
   const [loading, setLoading] = useState(false);
-  const [currentStep, setCurrentStep] = useState<'input' | 'crs' | 'plan'>('input');
+  const [currentStep, setCurrentStep] = useState<'input' | 'clarify' | 'crs' | 'plan'>('input');
+  const [clarifyQuestions, setClarifyQuestions] = useState<ClarifyingQuestion[]>([]);
+  const [clarifyAnswers, setClarifyAnswers] = useState<Record<number, string>>({});
 
   const handleGenerateCRS = async () => {
     if (!prompt.trim()) {
@@ -79,14 +92,55 @@ export default function IndexScreen() {
       }
       
       const data = await res.json();
-      setCrs(data.crs);
-      setCurrentStep('crs');
+      const crsResp: CRS = data.crs;
+      if (crsResp?.requires_clarification && crsResp.clarifying_questions?.length) {
+        setClarifyQuestions(crsResp.clarifying_questions.slice(0, 3));
+        setCurrentStep('clarify');
+      } else {
+        setCrs(crsResp);
+        setCurrentStep('crs');
+      }
     } catch (err) {
       console.error('CRS generation error:', err);
       Alert.alert(
         'Error',
         `Failed to generate CRS: ${err instanceof Error ? err.message : 'Unknown error'}`
       );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmitClarifications = async () => {
+    if (!clarifyQuestions.length) return;
+    const answers: ClarificationAnswer[] = clarifyQuestions.map((q, idx) => ({
+      question: q.question,
+      answer: (clarifyAnswers[idx] || '').trim(),
+    }));
+    if (answers.some(a => !a.answer)) {
+      Alert.alert('Missing info', 'Please answer the questions to continue.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch(`${BASE_URL}/api/crs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          prompt: prompt.trim(),
+          repo_url: repo.trim() || undefined,
+          answers,
+          max_questions: 0
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      const data = await res.json();
+      setCrs(data.crs);
+      setCurrentStep('crs');
+    } catch (err) {
+      console.error('Clarification submit error:', err);
+      Alert.alert('Error', `Failed to submit clarifications: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
@@ -225,6 +279,45 @@ export default function IndexScreen() {
     </ScrollView>
   );
 
+  const renderClarifyStep = () => (
+    <ScrollView style={styles.resultContainer}>
+      <View style={styles.resultHeader}>
+        <Text style={styles.resultTitle}>Quick Clarification</Text>
+        <TouchableOpacity style={styles.actionButton} onPress={handleReset}>
+          <Text style={styles.actionButtonText}>Cancel</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.crsBox}>
+        <Text style={styles.crsSummary}>We need a bit more detail to generate a precise plan.</Text>
+        {clarifyQuestions.map((q, idx) => (
+          <View key={idx} style={{ marginBottom: 12 }}>
+            <Text style={styles.crsSectionTitle}>{q.question}</Text>
+            <TextInput
+              placeholder="Your answer"
+              value={clarifyAnswers[idx] || ''}
+              onChangeText={(t) => setClarifyAnswers(prev => ({ ...prev, [idx]: t }))}
+              style={[styles.input, styles.textArea]}
+              multiline
+            />
+          </View>
+        ))}
+      </View>
+
+      <TouchableOpacity 
+        style={[styles.submitButton, loading && styles.submitButtonDisabled]}
+        onPress={handleSubmitClarifications}
+        disabled={loading}
+      >
+        {loading ? (
+          <ActivityIndicator color="white" />
+        ) : (
+          <Text style={styles.submitButtonText}>Continue</Text>
+        )}
+      </TouchableOpacity>
+    </ScrollView>
+  );
+
   const renderPlanStep = () => (
     <ScrollView style={styles.resultContainer}>
       <View style={styles.resultHeader}>
@@ -286,6 +379,7 @@ export default function IndexScreen() {
       </View>
 
       {currentStep === 'input' && renderInputStep()}
+      {currentStep === 'clarify' && renderClarifyStep()}
       {currentStep === 'crs' && renderCRSStep()}
       {currentStep === 'plan' && renderPlanStep()}
     </ScrollView>
