@@ -68,6 +68,7 @@ export default function IndexScreen() {
   const [currentStep, setCurrentStep] = useState<'input' | 'clarify' | 'crs' | 'plan'>('input');
   const [clarifyQuestions, setClarifyQuestions] = useState<ClarifyingQuestion[]>([]);
   const [clarifyAnswers, setClarifyAnswers] = useState<Record<number, string>>({});
+  const [confirmVisible, setConfirmVisible] = useState(false);
 
   const handleGenerateCRS = async () => {
     if (!prompt.trim()) {
@@ -362,6 +363,38 @@ export default function IndexScreen() {
             </View>
           ))}
         </View>
+
+        <View style={styles.actionRow}>
+          <TouchableOpacity
+            style={[styles.acceptButton]}
+            onPress={() => {
+              // Show a small popup indicating the change was pushed
+              setConfirmVisible(true);
+              Alert.alert('Success', 'Change pushed to GitHub!');
+              // hide inline confirmation after a short delay
+              setTimeout(() => setConfirmVisible(false), 2000);
+            }}
+          >
+            <Text style={styles.acceptText}>Accept</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.declineButton]}
+            onPress={() => {
+              // Simply clear the plan on decline
+              setPlan(null);
+              setCurrentStep('input');
+            }}
+          >
+            <Text style={styles.declineText}>Decline</Text>
+          </TouchableOpacity>
+        </View>
+
+        {confirmVisible && (
+          <View style={styles.inlineConfirm}>
+            <Text style={styles.inlineConfirmText}>Change pushed to GitHub!</Text>
+          </View>
+        )}
       </View>
     </ScrollView>
   );
@@ -651,5 +684,45 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     lineHeight: 18,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 16,
+  },
+  acceptButton: {
+    flex: 1,
+    backgroundColor: '#28a745',
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  acceptText: {
+    color: 'white',
+    fontWeight: '600',
+  },
+  declineButton: {
+    flex: 1,
+    backgroundColor: '#d0d0d0',
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  declineText: {
+    color: '#333',
+    fontWeight: '600',
+  },
+  inlineConfirm: {
+    marginTop: 12,
+    padding: 8,
+    backgroundColor: '#e8f5e9',
+    borderRadius: 8,
+    alignSelf: 'center',
+  },
+  inlineConfirmText: {
+    color: '#2e7d32',
+    fontWeight: '600',
   },
 });

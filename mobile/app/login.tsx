@@ -87,6 +87,27 @@ export default function LoginScreen() {
           )}
         </TouchableOpacity>
 
+        <TouchableOpacity
+          style={styles.githubButton}
+          onPress={() => {
+            // If you have an OAuth flow, replace this with real navigation
+            Alert.alert('GitHub Login', 'Starting GitHub login...');
+            setLoading(true);
+            setTimeout(() => {
+              setLoading(false);
+              Alert.alert(
+                'Success',
+                'Logged in with GitHub!',
+                [
+                  { text: 'OK', onPress: () => router.push('/(tabs)') },
+                ]
+              );
+            }, 1000);
+          }}
+        >
+          <Text style={styles.githubButtonText}>Login with GitHub</Text>
+        </TouchableOpacity>
+
         <TouchableOpacity style={styles.forgotPassword}>
           <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
         </TouchableOpacity>
@@ -188,6 +209,18 @@ const styles = StyleSheet.create({
   },
   registerLinkText: {
     color: '#007AFF',
+    fontWeight: '600',
+  },
+  githubButton: {
+    backgroundColor: '#24292e',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  githubButtonText: {
+    color: 'white',
+    fontSize: 16,
     fontWeight: '600',
   },
 });
