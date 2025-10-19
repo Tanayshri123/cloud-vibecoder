@@ -8,9 +8,14 @@ import asyncio
 import os
 import sys
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables from backend/.env
+backend_dir = Path(__file__).parent / "backend"
+env_path = backend_dir / ".env"
+load_dotenv(env_path)
 
 # Add the backend directory to Python path
-backend_dir = Path(__file__).parent / "backend"
 sys.path.insert(0, str(backend_dir))
 
 from app.models.crs_model import CRSRequest
