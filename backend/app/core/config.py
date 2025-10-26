@@ -11,8 +11,9 @@ class Settings(BaseSettings):
     openai_base_url: str = "https://api.openai.com/v1"
     llm_model: str = "gpt-4o-mini"       # Default to cost-effective model
     
-    # GitHub Configuration (for future use)
-    github_token: Optional[str] = None
+    # GitHub OAuth Configuration
+    github_client_id: Optional[str] = None
+    github_client_secret: Optional[str] = None
 
     class Config:
         env_file = ".env"

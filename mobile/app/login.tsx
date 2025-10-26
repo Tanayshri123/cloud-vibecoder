@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,19 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { router } from 'expo-router';
+import {
+  AuthRequest,
+  AuthSessionResult,
+  makeRedirectUri,
+  ResponseType,
+} from 'expo-auth-session';
+
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://cloud-vibecoder-1.onrender.com';
+const GITHUB_CLIENT_ID = process.env.EXPO_PUBLIC_GITHUB_CLIENT_ID;
+const GITHUB_SCOPES = ['read:user', 'user:email'];
+const GITHUB_DISCOVERY = {
+  authorizationEndpoint: 'https://github.com/login/oauth/authorize',
+};
 
 export default function LoginScreen() {
   const [formData, setFormData] = useState({
@@ -17,6 +30,12 @@ export default function LoginScreen() {
     password: '',
   });
   const [loading, setLoading] = useState(false);
+  const [githubLoading, setGithubLoading] = useState(false);
+
+// Build a redirect URI that works across web, Expo Go, and native builds.
+// Ensure every platform registers the `oauth-redirect` path so the same
+// callback can be whitelisted in GitHub's OAuth app settings.
+const redirectUri = useMemo(() => makeRedirectUri({ path: 'oauth-redirect' }), []);
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -88,24 +107,93 @@ export default function LoginScreen() {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.githubButton}
-          onPress={() => {
-            // If you have an OAuth flow, replace this with real navigation
-            Alert.alert('GitHub Login', 'Starting GitHub login...');
-            setLoading(true);
-            setTimeout(() => {
-              setLoading(false);
-              Alert.alert(
-                'Success',
-                'Logged in with GitHub!',
-                [
-                  { text: 'OK', onPress: () => router.push('/(tabs)') },
-                ]
-              );
-            }, 1000);
+          style={[styles.githubButton, githubLoading && styles.buttonDisabled]}
+          onPress={async () => {
+            if (!GITHUB_CLIENT_ID) {
+              Alert.alert('GitHub Login', 'GitHub OAuth is not configured. Please set EXPO_PUBLIC_GITHUB_CLIENT_ID.');
+              console.warn('[GitHub OAuth] Missing EXPO_PUBLIC_GITHUB_CLIENT_ID');
+              return;
+            }
+
+            setGithubLoading(true);
+            try {
+              console.log('[GitHub OAuth] Starting login', {
+                redirectUri,
+                clientId: GITHUB_CLIENT_ID,
+                scopes: GITHUB_SCOPES,
+              });
+
+              const request = new AuthRequest({
+                clientId: GITHUB_CLIENT_ID,
+                scopes: GITHUB_SCOPES,
+                redirectUri,
+                responseType: ResponseType.Code,
+                extraParams: {
+                  allow_signup: 'true',
+                },
+                usePKCE: false,
+              });
+
+              const result = await request.promptAsync(GITHUB_DISCOVERY);
+              console.log('[GitHub OAuth] AuthSession result', result);
+
+              if (result.type === 'error') {
+                const errorDescription = (result as AuthSessionResult & { params?: { error_description?: string } })?.params?.error_description;
+                throw new Error(errorDescription || 'GitHub returned an error during authentication');
+              }
+
+              if (result.type !== 'success' || !result.params?.code) {
+                if (result.type !== 'dismiss') {
+                  Alert.alert('GitHub Login', 'GitHub login was cancelled.');
+                }
+                return;
+              }
+
+              const exchangeResponse = await fetch(`${API_BASE_URL}/api/auth/github/exchange`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  code: result.params.code,
+                  redirect_uri: redirectUri,
+                }),
+              });
+
+              console.log('[GitHub OAuth] Exchange response status', {
+                status: exchangeResponse.status,
+                url: exchangeResponse.url,
+              });
+
+              if (!exchangeResponse.ok) {
+                const errorPayload = await exchangeResponse.json().catch(() => ({}));
+                console.error('[GitHub OAuth] Exchange failure payload', errorPayload);
+                throw new Error(errorPayload?.detail || 'GitHub exchange failed');
+              }
+
+              const payload = await exchangeResponse.json();
+              console.log('[GitHub OAuth] Exchange success payload', payload);
+              const userName = payload?.user?.name || payload?.user?.login || 'GitHub user';
+
+              Alert.alert('Success', `Signed in as ${userName}`, [
+                {
+                  text: 'Continue',
+                  onPress: () => router.push('/(tabs)'),
+                },
+              ]);
+            } catch (error) {
+              const message = error instanceof Error ? error.message : 'Unexpected error during GitHub login';
+              console.error('[GitHub OAuth] Login error', error);
+              Alert.alert('GitHub Login Failed', message);
+            } finally {
+              setGithubLoading(false);
+            }
           }}
+          disabled={githubLoading}
         >
-          <Text style={styles.githubButtonText}>Login with GitHub</Text>
+          {githubLoading ? (
+            <ActivityIndicator color="white" />
+          ) : (
+            <Text style={styles.githubButtonText}>Login with GitHub</Text>
+          )}
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.forgotPassword}>
@@ -224,4 +312,3 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
-

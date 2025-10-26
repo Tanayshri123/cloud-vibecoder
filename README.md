@@ -49,6 +49,36 @@ cloud-vibecoder/
 └── infra/           # Infrastructure configuration
 ```
 
+### POST `/api/auth/github/exchange`
+
+Exchanges a GitHub OAuth authorization code for an access token and basic profile data. The mobile client hits this after obtaining a `code` from GitHub via Expo AuthSession.
+
+**Request Body:**
+```json
+{
+  "code": "github-oauth-code",
+  "redirect_uri": "mobile://oauth-redirect"
+}
+```
+
+**Response:**
+```json
+{
+  "access_token": "gho_...",
+  "token_type": "bearer",
+  "scope": "read:user,user:email",
+  "user": {
+    "id": 12345,
+    "login": "octocat",
+    "name": "The Octocat",
+    "avatar_url": "https://avatars.githubusercontent.com/u/583231?v=4",
+    "email": "octocat@github.com"
+  }
+}
+```
+
+> The backend performs the code exchange with GitHub so the mobile app never needs to store the client secret.
+
 ## Quick Start
 
 ### Prerequisites
@@ -106,6 +136,7 @@ This will open the Expo development tools. You can then:
 - **Environment Configuration**: Easy switching between local and production APIs
 - **Modern UI**: Clean, responsive interface with proper theming
 - **Real-time Communication**: Mobile app communicates with deployed FastAPI backend
+- **GitHub Sign-In**: Native GitHub OAuth flow with server-side token exchange and profile retrieval
 
 ## API Endpoints
 
@@ -151,7 +182,23 @@ The app uses environment variables for API configuration:
 - Create a `.env` file in the mobile directory:
   ```
   EXPO_PUBLIC_API_URL=http://localhost:8000
+  EXPO_PUBLIC_GITHUB_CLIENT_ID=your_github_oauth_client_id
   ```
+- Create a `.env` file in `backend/` and provide your GitHub OAuth credentials alongside the existing settings:
+  ```
+  OPENAI_API_KEY=sk-...
+  GITHUB_CLIENT_ID=your_github_oauth_client_id
+  GITHUB_CLIENT_SECRET=your_github_oauth_client_secret
+  ```
+
+GitHub requires you to register an OAuth application:
+1. Head to **Settings → Developer settings → OAuth Apps** in GitHub and create a new app.
+2. Add each redirect you plan to use so GitHub accepts them:
+   - Expo web dev: `http://localhost:19006/oauth-redirect`
+   - Expo Go / dev clients: value shown in the Expo CLI logs (usually `exp://127.0.0.1:8081/--/oauth-redirect`)
+   - Native builds: `mobile://oauth-redirect`
+   GitHub lets you register multiple callback URLs—add them all for reliable testing.
+3. Copy the generated **Client ID** and **Client Secret** into the `.env` files above.
 
 ## Development
 
