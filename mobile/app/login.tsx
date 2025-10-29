@@ -35,11 +35,20 @@ export default function LoginScreen() {
 // Build a redirect URI that works across web, Expo Go, and native builds.
 // Ensure every platform registers the `oauth-redirect` path so the same
 // callback can be whitelisted in GitHub's OAuth app settings.
-const redirectUri = useMemo(() => makeRedirectUri({ path: 'oauth-redirect' }), []);
+// Use --/ prefix for Expo Router deep linking
+const redirectUri = useMemo(
+  () => makeRedirectUri({
+    scheme: 'exp',
+    path: '(auth)/oauth-redirect'  // Match the file structure in app directory
+  }),
+  []
+);
 
-  const handleInputChange = (field: string, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-  };
+console.log('[DEBUG] Redirect URI:', redirectUri);  // This will help debug the URI
+
+const handleInputChange = (field: string, value: string) => {
+  setFormData(prev => ({ ...prev, [field]: value }));
+};
 
   const handleLogin = async () => {
     if (!formData.email.trim() || !formData.password.trim()) {
@@ -133,6 +142,10 @@ const redirectUri = useMemo(() => makeRedirectUri({ path: 'oauth-redirect' }), [
                 },
                 usePKCE: false,
               });
+              
+              // Log the full request URL for debugging
+              const url = await request.makeAuthUrlAsync(GITHUB_DISCOVERY);
+              console.log('[GitHub OAuth] Auth URL:', url);
 
               const result = await request.promptAsync(GITHUB_DISCOVERY);
               console.log('[GitHub OAuth] AuthSession result', result);
