@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from app.models.plan_model import PlanRequest, PlanResponse
 from app.services.plan_synthesis_service import PlanSynthesisService
+from app.services.repo_structure_service import get_repo_structure
 import logging
 
 router = APIRouter()
@@ -27,9 +28,18 @@ async def generate_implementation_plan(request: PlanGenerationRequest):
     """
     try:
         # Convert endpoint request to service request
+        repo_context = None
+        if request.repo_url:
+            repo_context = {"url": request.repo_url}
+            try:
+                structure = await get_repo_structure(request.repo_url)
+                repo_context["structure"] = structure
+            except Exception as e:
+                logger.warning(f"Failed to fetch repo structure: {e}")
+
         plan_request = PlanRequest(
             crs=request.crs,
-            repository_context={"url": request.repo_url} if request.repo_url else None,
+            repository_context=repo_context,
             scope_preferences=request.scope_preferences
         )
         

@@ -51,7 +51,18 @@ class PlanSynthesisService:
         crs = request.crs
         repo_context = request.repository_context or {}
         scope_prefs = request.scope_preferences or []
-        
+
+        # Build repository context text without code content
+        repo_context_lines = []
+        if repo_context:
+            url = repo_context.get('url')
+            structure = repo_context.get('structure')
+            if url:
+                repo_context_lines.append(f"Repository URL: {url}")
+            if structure:
+                repo_context_lines.append("Repository Structure (names only):\n" + structure)
+        repo_context_text = "\n".join(repo_context_lines)
+
         prompt = f"""
 You are an expert software architect tasked with creating detailed implementation plans from Change Request Specifications (CRS).
 
@@ -71,7 +82,7 @@ Complexity: {crs.get('estimated_complexity', 'medium')}
 Constraints: {[c['description'] for c in crs.get('constraints', [])]}
 Acceptance Criteria: {[c['criterion'] for c in crs.get('acceptance_criteria', [])]}
 
-{f"Repository Context: {repo_context}" if repo_context else ""}
+{repo_context_text}
 {f"Scope Preferences: {scope_prefs}" if scope_prefs else ""}
 
 Please respond with a JSON object following this exact structure:

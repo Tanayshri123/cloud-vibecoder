@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from app.models.crs_model import CRSRequest, CRSResponse, ClarificationAnswer
 from app.services.llm_service import LLMService
+from app.services.repo_structure_service import get_repo_structure
 import logging
 
 router = APIRouter()
@@ -32,10 +33,20 @@ async def generate_crs(request: CRSEndpointRequest):
     """
     try:
         # Convert endpoint request to service request
+        # If repo_url provided, augment context with repository structure (names only)
+        additional_context = request.context
+        if request.repo_url:
+            try:
+                structure = await get_repo_structure(request.repo_url)
+                prefix = "\n\nRepository Structure (names only):\n"
+                additional_context = (additional_context or "") + prefix + structure
+            except Exception as e:
+                logger.warning(f"Failed to fetch repo structure: {e}")
+
         crs_request = CRSRequest(
             user_prompt=request.prompt,
             repository_url=request.repo_url,
-            additional_context=request.context,
+            additional_context=additional_context,
             clarification_answers=request.answers or [],
             max_questions=request.max_questions or 3
         )
