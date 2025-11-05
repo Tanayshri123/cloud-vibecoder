@@ -19,7 +19,7 @@ import {
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://cloud-vibecoder-1.onrender.com';
 const GITHUB_CLIENT_ID = process.env.EXPO_PUBLIC_GITHUB_CLIENT_ID;
-const GITHUB_SCOPES = ['read:user', 'user:email'];
+const GITHUB_SCOPES = ['read:user', 'user:email', 'repo'];
 const GITHUB_DISCOVERY = {
   authorizationEndpoint: 'https://github.com/login/oauth/authorize',
 };
@@ -33,18 +33,19 @@ export default function LoginScreen() {
   const [githubLoading, setGithubLoading] = useState(false);
 
 // Build a redirect URI that works across web, Expo Go, and native builds.
-// Ensure every platform registers the `oauth-redirect` path so the same
-// callback can be whitelisted in GitHub's OAuth app settings.
-// Use --/ prefix for Expo Router deep linking
+// Note: Route groups like (auth) don't appear in the actual URL path
+// So app/(auth)/oauth-redirect.tsx is accessible at /oauth-redirect
 const redirectUri = useMemo(
-  () => makeRedirectUri({
-    scheme: 'exp',
-    path: '(auth)/oauth-redirect'  // Match the file structure in app directory
-  }),
+  () => {
+    const uri = makeRedirectUri({
+      scheme: 'exp',
+      path: 'oauth-redirect'  // Without (auth) since it's just a route group
+    });
+    console.log('[DEBUG] Generated Redirect URI:', uri);
+    return uri;
+  },
   []
 );
-
-console.log('[DEBUG] Redirect URI:', redirectUri);  // This will help debug the URI
 
 const handleInputChange = (field: string, value: string) => {
   setFormData(prev => ({ ...prev, [field]: value }));
