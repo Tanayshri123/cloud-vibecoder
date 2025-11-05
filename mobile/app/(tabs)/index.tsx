@@ -60,6 +60,14 @@ interface ImplementationPlan {
   blast_radius: string;
 }
 
+interface FileTreeItem {
+  name: string;
+  path: string;
+  type: 'file' | 'dir';
+  size?: number;
+  sha?: string;
+}
+
 export default function IndexScreen() {
   const [repo, setRepo] = useState('');
   const [selectedRepo, setSelectedRepo] = useState<GitHubRepo | null>(null);
@@ -75,6 +83,13 @@ export default function IndexScreen() {
   const [clarifyQuestions, setClarifyQuestions] = useState<ClarifyingQuestion[]>([]);
   const [clarifyAnswers, setClarifyAnswers] = useState<Record<number, string>>({});
   const [confirmVisible, setConfirmVisible] = useState(false);
+  
+  // File browser state
+  const [showFileBrowser, setShowFileBrowser] = useState(false);
+  const [fileTree, setFileTree] = useState<FileTreeItem[]>([]);
+  const [loadingFiles, setLoadingFiles] = useState(false);
+  const [currentPath, setCurrentPath] = useState('');
+  const [pathHistory, setPathHistory] = useState<string[]>([]);
 
   useEffect(() => {
     const init = async () => {
@@ -94,6 +109,61 @@ export default function IndexScreen() {
     };
     init();
   }, []);
+
+  const fetchFileTree = async (path: string = '') => {
+    if (!selectedRepo) return;
+
+    setLoadingFiles(true);
+    try {
+      const [owner, repoName] = selectedRepo.full_name.split('/');
+      const contents = await githubService.getRepositoryContents(owner, repoName, path);
+      
+      // GitHub API returns either an array (directory) or object (file)
+      const items = Array.isArray(contents) ? contents : [contents];
+      
+      const mapped: FileTreeItem[] = items.map((item: any) => ({
+        name: item.name,
+        path: item.path,
+        type: item.type === 'dir' ? 'dir' : 'file',
+        size: item.size,
+        sha: item.sha,
+      }));
+
+      // Sort: directories first, then alphabetically
+      mapped.sort((a, b) => {
+        if (a.type === b.type) return a.name.localeCompare(b.name);
+        return a.type === 'dir' ? -1 : 1;
+      });
+
+      setFileTree(mapped);
+      setCurrentPath(path);
+    } catch (err) {
+      console.error('Error fetching file tree:', err);
+      Alert.alert('Error', `Failed to load file structure: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setLoadingFiles(false);
+    }
+  };
+
+  const handleFileTreeItemPress = (item: FileTreeItem) => {
+    if (item.type === 'dir') {
+      setPathHistory([...pathHistory, currentPath]);
+      fetchFileTree(item.path);
+    } else {
+      // For files, you could show file contents or just indicate selection
+      Alert.alert('File Selected', `Path: ${item.path}\nSize: ${item.size} bytes`);
+    }
+  };
+
+  const handleBackInFileTree = () => {
+    if (pathHistory.length > 0) {
+      const previous = pathHistory[pathHistory.length - 1];
+      setPathHistory(pathHistory.slice(0, -1));
+      fetchFileTree(previous);
+    } else {
+      setShowFileBrowser(false);
+    }
+  };
 
   const handleGenerateCRS = async () => {
     if (!prompt.trim()) {
@@ -243,6 +313,10 @@ export default function IndexScreen() {
                         setSelectedRepo(item);
                         setRepo(item.html_url || '');
                         setReposOpen(false);
+                        setShowFileBrowser(false);
+                        setFileTree([]);
+                        setCurrentPath('');
+                        setPathHistory([]);
                       }}
                     >
                       <Text style={styles.dropdownItemText} numberOfLines={1}>
@@ -263,6 +337,59 @@ export default function IndexScreen() {
         >
           <Text style={[styles.dropdownText, { color: '#6B7280' }]}>Sign in with GitHub to select a repository</Text>
         </TouchableOpacity>
+      )}
+
+      {/* File Browser Button */}
+      {selectedRepo && !showFileBrowser && (
+        <TouchableOpacity
+          style={styles.fileBrowserButton}
+          onPress={() => {
+            setShowFileBrowser(true);
+            fetchFileTree('');
+          }}
+        >
+          <Text style={styles.fileBrowserButtonText}>📁 Browse Files</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* File Browser */}
+      {showFileBrowser && selectedRepo && (
+        <View style={styles.fileBrowserContainer}>
+          <View style={styles.fileBrowserHeader}>
+            <TouchableOpacity onPress={handleBackInFileTree} style={styles.fileBrowserBackButton}>
+              <Text style={styles.fileBrowserBackText}>← Back</Text>
+            </TouchableOpacity>
+            <Text style={styles.fileBrowserPath} numberOfLines={1}>
+              {currentPath || selectedRepo.full_name}
+            </Text>
+            <TouchableOpacity onPress={() => setShowFileBrowser(false)} style={styles.fileBrowserCloseButton}>
+              <Text style={styles.fileBrowserCloseText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+
+          {loadingFiles ? (
+            <View style={styles.fileBrowserLoading}>
+              <ActivityIndicator size="large" color="#007AFF" />
+            </View>
+          ) : (
+            <FlatList
+              data={fileTree}
+              keyExtractor={(item) => item.path}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.fileTreeItem}
+                  onPress={() => handleFileTreeItemPress(item)}
+                >
+                  <Text style={styles.fileTreeIcon}>{item.type === 'dir' ? '📁' : '📄'}</Text>
+                  <Text style={styles.fileTreeName} numberOfLines={1}>
+                    {item.name}
+                  </Text>
+                </TouchableOpacity>
+              )}
+              style={styles.fileTreeList}
+            />
+          )}
+        </View>
       )}
 
       <TextInput
@@ -844,6 +971,95 @@ const styles = StyleSheet.create({
     borderBottomColor: '#f0f0f0',
   },
   dropdownItemText: {
+    fontSize: 16,
+    color: '#1a1a1a',
+  },
+  // File browser styles
+  fileBrowserButton: {
+    backgroundColor: '#f8f9fa',
+    borderWidth: 1,
+    borderColor: '#e1e5e9',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginBottom: 16,
+    alignItems: 'center',
+  },
+  fileBrowserButtonText: {
+    fontSize: 16,
+    color: '#007AFF',
+    fontWeight: '600',
+  },
+  fileBrowserContainer: {
+    backgroundColor: 'white',
+    borderWidth: 1,
+    borderColor: '#e1e5e9',
+    borderRadius: 12,
+    marginBottom: 16,
+    maxHeight: 400,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  fileBrowserHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e1e5e9',
+    backgroundColor: '#f8f9fa',
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+  },
+  fileBrowserBackButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  fileBrowserBackText: {
+    fontSize: 14,
+    color: '#007AFF',
+    fontWeight: '600',
+  },
+  fileBrowserPath: {
+    flex: 1,
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    marginHorizontal: 8,
+  },
+  fileBrowserCloseButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  fileBrowserCloseText: {
+    fontSize: 18,
+    color: '#666',
+  },
+  fileBrowserLoading: {
+    padding: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fileTreeList: {
+    maxHeight: 320,
+  },
+  fileTreeItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  fileTreeIcon: {
+    fontSize: 20,
+    marginRight: 12,
+  },
+  fileTreeName: {
+    flex: 1,
     fontSize: 16,
     color: '#1a1a1a',
   },
