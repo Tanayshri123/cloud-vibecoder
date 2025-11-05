@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Alert } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Alert, FlatList } from 'react-native';
 import { router } from 'expo-router';
+import githubService, { type GitHubRepo } from '../../services/githubService';
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://cloud-vibecoder-1.onrender.com';
 
@@ -61,6 +62,11 @@ interface ImplementationPlan {
 
 export default function IndexScreen() {
   const [repo, setRepo] = useState('');
+  const [selectedRepo, setSelectedRepo] = useState<GitHubRepo | null>(null);
+  const [repos, setRepos] = useState<GitHubRepo[]>([]);
+  const [reposOpen, setReposOpen] = useState(false);
+  const [loadingRepos, setLoadingRepos] = useState(false);
+  const [isAuthed, setIsAuthed] = useState(false);
   const [prompt, setPrompt] = useState('');
   const [crs, setCrs] = useState<CRS | null>(null);
   const [plan, setPlan] = useState<ImplementationPlan | null>(null);
@@ -69,6 +75,25 @@ export default function IndexScreen() {
   const [clarifyQuestions, setClarifyQuestions] = useState<ClarifyingQuestion[]>([]);
   const [clarifyAnswers, setClarifyAnswers] = useState<Record<number, string>>({});
   const [confirmVisible, setConfirmVisible] = useState(false);
+
+  useEffect(() => {
+    const init = async () => {
+      try {
+        const authed = await githubService.isAuthenticated();
+        setIsAuthed(authed);
+        if (authed) {
+          setLoadingRepos(true);
+          const list = await githubService.getRepositories('all', 'updated', 'desc');
+          setRepos(list);
+        }
+      } catch (e) {
+        console.warn('Failed to load repos:', e);
+      } finally {
+        setLoadingRepos(false);
+      }
+    };
+    init();
+  }, []);
 
   const handleGenerateCRS = async () => {
     if (!prompt.trim()) {
@@ -189,13 +214,57 @@ export default function IndexScreen() {
 
   const renderInputStep = () => (
     <View style={styles.form}>
-      <TextInput
-        placeholder="Enter GitHub Repo URL (optional)"
-        value={repo}
-        onChangeText={setRepo}
-        style={styles.input}
-        autoCapitalize="none"
-      />
+      {/* Repo selector */}
+      {isAuthed ? (
+        <View style={styles.dropdownContainer}>
+          <TouchableOpacity
+            style={styles.dropdown}
+            onPress={() => setReposOpen((o) => !o)}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.dropdownText} numberOfLines={1}>
+              {selectedRepo ? selectedRepo.full_name : 'Select a GitHub repository'}
+            </Text>
+            {loadingRepos && <ActivityIndicator size="small" color="#6B7280" />}
+          </TouchableOpacity>
+
+          {reposOpen && (
+            <View style={styles.dropdownList}>
+              {repos.length === 0 && !loadingRepos ? (
+                <Text style={styles.dropdownEmpty}>No repositories found.</Text>
+              ) : (
+                <FlatList
+                  data={repos}
+                  keyExtractor={(item) => String(item.id)}
+                  renderItem={({ item }) => (
+                    <TouchableOpacity
+                      style={styles.dropdownItem}
+                      onPress={() => {
+                        setSelectedRepo(item);
+                        setRepo(item.html_url || '');
+                        setReposOpen(false);
+                      }}
+                    >
+                      <Text style={styles.dropdownItemText} numberOfLines={1}>
+                        {item.full_name}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                  style={{ maxHeight: 240 }}
+                />
+              )}
+            </View>
+          )}
+        </View>
+      ) : (
+        <TouchableOpacity
+          style={[styles.dropdown, { justifyContent: 'center' }]}
+          onPress={() => router.push('/login')}
+        >
+          <Text style={[styles.dropdownText, { color: '#6B7280' }]}>Sign in with GitHub to select a repository</Text>
+        </TouchableOpacity>
+      )}
+
       <TextInput
         placeholder="Describe your change request"
         value={prompt}
@@ -724,5 +793,58 @@ const styles = StyleSheet.create({
   inlineConfirmText: {
     color: '#2e7d32',
     fontWeight: '600',
+  },
+  // Dropdown styles for repo selector
+  dropdownContainer: {
+    marginBottom: 16,
+  },
+  dropdown: {
+    backgroundColor: 'white',
+    borderWidth: 1,
+    borderColor: '#e1e5e9',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    minHeight: 48,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    flexDirection: 'row',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  dropdownText: {
+    fontSize: 16,
+    color: '#1a1a1a',
+    flex: 1,
+    marginRight: 8,
+  },
+  dropdownList: {
+    backgroundColor: 'white',
+    borderWidth: 1,
+    borderColor: '#e1e5e9',
+    borderRadius: 12,
+    marginTop: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  dropdownEmpty: {
+    padding: 16,
+    color: '#6B7280',
+  },
+  dropdownItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  dropdownItemText: {
+    fontSize: 16,
+    color: '#1a1a1a',
   },
 });
