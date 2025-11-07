@@ -16,6 +16,7 @@ import {
   makeRedirectUri,
   ResponseType,
 } from 'expo-auth-session';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://cloud-vibecoder-1.onrender.com';
 const GITHUB_CLIENT_ID = process.env.EXPO_PUBLIC_GITHUB_CLIENT_ID;
@@ -186,6 +187,11 @@ const handleInputChange = (field: string, value: string) => {
               const payload = await exchangeResponse.json();
               console.log('[GitHub OAuth] Exchange success payload', payload);
               const userName = payload?.user?.name || payload?.user?.login || 'GitHub user';
+
+              // Store the access token and user info
+              await AsyncStorage.setItem('github_access_token', payload.access_token);
+              await AsyncStorage.setItem('github_user', JSON.stringify(payload.user));
+              console.log('[GitHub OAuth] Token and user data stored');
 
               Alert.alert('Success', `Signed in as ${userName}`, [
                 {
