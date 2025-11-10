@@ -17,32 +17,51 @@ Cloud Vibecoder takes your natural language requests and creates structured impl
 - **Change Request**: Describe what you want to do in plain English (e.g., "Add dark mode toggle to the settings page")
 
 ### What Happens Next
-1. **Mobile App** sends the repository URL and prompt to the backend API
-2. **Backend** receives the data and processes it (currently returns a mock response)
-3. **Response** includes:
-   - A plan title based on your prompt
-   - A summary explaining the approach
-   - Step-by-step implementation instructions
+1. **Mobile App** sends the repository URL, prompt, and GitHub OAuth token to the backend API
+2. **Backend** creates a coding agent job and starts Docker container execution
+3. **Real AI Coding Agent** (Aider) executes your changes in an isolated environment:
+   - Clones the target repository
+   - Analyzes the codebase structure
+   - Makes actual code modifications using AI
+   - Commits changes to a new branch
+   - Creates a pull request on GitHub
+4. **Real-time Updates** - Mobile app polls job status every 3 seconds
+5. **Completion** - Returns actual PR URL and execution details
 
 ### Current Backend Behavior
-The backend currently returns a **mock response** that demonstrates the structure:
-- Takes your prompt and creates a plan title
-- Generates a generic summary
-- Provides 4 standard steps:
-  1. Inspect the repository
-  2. Locate relevant code areas
-  3. Draft modification steps
-  4. Generate diff and propose PR
+The backend now executes **real coding agent jobs** using Docker containers:
+- **Aider AI Coding Agent**: Production-ready tool that actually modifies code
+- **GitHub Integration**: Automatic forking, branching, and PR creation
+- **Job Queue System**: Async execution with status tracking
+- **Real Results**: Returns actual pull request URLs and modified files
+- **Error Handling**: Comprehensive logging and graceful failure recovery
 
 ## Project Structure
 
 ```
 cloud-vibecoder/
 ├── backend/           # FastAPI backend server (deployed on Render)
-│   ├── main.py       # Main API server with /api/plan endpoint
-│   └── .venv/        # Python virtual environment
+│   ├── app/
+│   │   ├── api/
+│   │   │   ├── agent_jobs.py    # Coding agent job endpoints
+│   │   │   └── ...              # Other API endpoints
+│   │   ├── services/
+│   │   │   ├── coding_agent_service.py  # Docker orchestration
+│   │   │   ├── github_app_service.py    # GitHub PR creation
+│   │   │   └── ...              # Other services
+│   │   ├── models/
+│   │   │   ├── job_model.py     # Job and result data models
+│   │   │   └── ...              # Other models
+│   │   └── main.py              # Main API server with all routes
+│   ├── docker/
+│   │   └── coding-agent/        # Docker infrastructure
+│   │       ├── Dockerfile       # Aider-based coding agent image
+│   │       └── entrypoint.sh    # Container execution script
+│   └── .venv/                   # Python virtual environment
 ├── mobile/           # React Native mobile app
 │   ├── app/          # App screens and navigation
+│   │   └── (tabs)/
+│   │       └── index.tsx        # Updated with real agent integration
 │   ├── components/   # Reusable UI components
 │   ├── constants/    # App constants and themes
 │   └── package.json  # Node.js dependencies
