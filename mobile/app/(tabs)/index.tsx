@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Alert } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Alert, FlatList, Linking } from 'react-native';
 import { router } from 'expo-router';
+import githubService, { type GitHubRepo } from '../../services/githubService';
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://cloud-vibecoder-1.onrender.com';
 
@@ -48,6 +49,27 @@ interface FileChange {
   priority: number;
 }
 
+interface AgentJob {
+  id: string;
+  repo_url: string;
+  prompt: string;
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+  result?: {
+    status: string;
+    branch_name: string;
+    files_modified: string[];
+    pr_url?: string;
+    pr_number?: number;
+    forked?: boolean;
+    error_message?: string;
+  };
+  created_at: string;
+  started_at?: string;
+  completed_at?: string;
+  error_message?: string;
+  progress?: string;
+}
+
 interface ImplementationPlan {
   title: string;
   summary: string;
@@ -59,16 +81,44 @@ interface ImplementationPlan {
   blast_radius: string;
 }
 
+interface GitHubRepo {
+  id: string;
+  name: string;
+  owner: string;
+}
+
+interface FileTreeItem {
+  name: string;
+  path: string;
+  isDirectory: boolean;
+}
+
 export default function IndexScreen() {
   const [repo, setRepo] = useState('');
+  const [selectedRepo, setSelectedRepo] = useState<GitHubRepo | null>(null);
+  const [repos, setRepos] = useState<GitHubRepo[]>([]);
+  const [reposOpen, setReposOpen] = useState(false);
+  const [loadingRepos, setLoadingRepos] = useState(false);
+  const [isAuthed, setIsAuthed] = useState(false);
   const [prompt, setPrompt] = useState('');
   const [crs, setCrs] = useState<CRS | null>(null);
   const [plan, setPlan] = useState<ImplementationPlan | null>(null);
   const [loading, setLoading] = useState(false);
-  const [currentStep, setCurrentStep] = useState<'input' | 'clarify' | 'crs' | 'plan'>('input');
+  const [currentStep, setCurrentStep] = useState<'input' | 'clarify' | 'crs' | 'plan' | 'executing'>('input');
   const [clarifyQuestions, setClarifyQuestions] = useState<ClarifyingQuestion[]>([]);
   const [clarifyAnswers, setClarifyAnswers] = useState<Record<number, string>>({});
   const [confirmVisible, setConfirmVisible] = useState(false);
+
+  // Agent job state
+  const [currentJob, setCurrentJob] = useState<AgentJob | null>(null);
+  const [jobPolling, setJobPolling] = useState(false);
+
+  // File browser state
+  const [showFileBrowser, setShowFileBrowser] = useState(false);
+  const [fileTree, setFileTree] = useState<FileTreeItem[]>([]);
+  const [loadingFiles, setLoadingFiles] = useState(false);
+  const [currentPath, setCurrentPath] = useState('');
+  const [pathHistory, setPathHistory] = useState<string[]>([]);
 
   const handleGenerateCRS = async () => {
     if (!prompt.trim()) {
@@ -184,7 +234,96 @@ export default function IndexScreen() {
   const handleReset = () => {
     setCrs(null);
     setPlan(null);
+    setCurrentJob(null);
+    setJobPolling(false);
     setCurrentStep('input');
+  };
+
+  const submitAgentJob = async () => {
+    if (!plan || !selectedRepo) return;
+
+    try {
+      // Get GitHub access token
+      const accessToken = await githubService.getAccessToken();
+      if (!accessToken) {
+        Alert.alert('Error', 'Please sign in with GitHub to execute changes');
+        return;
+      }
+
+      setLoading(true);
+      setCurrentStep('executing');
+
+      const response = await fetch(`${BASE_URL}/api/agent/jobs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          repo_url: selectedRepo.html_url,
+          prompt: prompt,
+          plan_id: 'current-plan',
+          access_token: accessToken
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const jobData = await response.json();
+      setCurrentJob(jobData);
+      
+      // Start polling for job status
+      startJobPolling(jobData.job_id);
+      
+    } catch (err) {
+      console.error('Job submission error:', err);
+      Alert.alert(
+        'Error',
+        `Failed to submit job: ${err instanceof Error ? err.message : 'Unknown error'}`
+      );
+      setCurrentStep('plan');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const startJobPolling = (jobId: string) => {
+    setJobPolling(true);
+    
+    const pollInterval = setInterval(async () => {
+      try {
+        const response = await fetch(`${BASE_URL}/api/agent/jobs/${jobId}`);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const jobData = await response.json();
+        setCurrentJob(jobData.job);
+        
+        // Check if job is complete
+        if (jobData.job.status === 'completed' || jobData.job.status === 'failed') {
+          clearInterval(pollInterval);
+          setJobPolling(false);
+          
+          if (jobData.job.status === 'completed' && jobData.job.result?.pr_url) {
+            Alert.alert(
+              'Success!',
+              `Pull request created: ${jobData.job.result.pr_url}`,
+              [
+                { text: 'View PR', onPress: () => Linking.openURL(jobData.job.result!.pr_url!) },
+                { text: 'OK' }
+              ]
+            );
+          } else if (jobData.job.status === 'failed') {
+            Alert.alert('Execution Failed', jobData.job.error_message || 'Unknown error');
+          }
+        }
+      } catch (err) {
+        console.error('Job polling error:', err);
+        clearInterval(pollInterval);
+        setJobPolling(false);
+        Alert.alert('Error', 'Failed to check job status');
+      }
+    }, 3000); // Poll every 3 seconds
   };
 
   const renderInputStep = () => (
@@ -367,32 +506,96 @@ export default function IndexScreen() {
         <View style={styles.actionRow}>
           <TouchableOpacity
             style={[styles.acceptButton]}
-            onPress={() => {
-              // Show a small popup indicating the change was pushed
-              setConfirmVisible(true);
-              Alert.alert('Success', 'Change pushed to GitHub!');
-              // hide inline confirmation after a short delay
-              setTimeout(() => setConfirmVisible(false), 2000);
-            }}
+            onPress={submitAgentJob}
+            disabled={loading}
           >
-            <Text style={styles.acceptText}>Accept</Text>
+            {loading ? (
+              <ActivityIndicator color="white" />
+            ) : (
+              <Text style={styles.acceptText}>Execute Changes</Text>
+            )}
           </TouchableOpacity>
 
           <TouchableOpacity
             style={[styles.declineButton]}
-            onPress={() => {
-              // Simply clear the plan on decline
-              setPlan(null);
-              setCurrentStep('input');
-            }}
+            onPress={handleReset}
           >
-            <Text style={styles.declineText}>Decline</Text>
+            <Text style={styles.declineText}>Cancel</Text>
           </TouchableOpacity>
         </View>
 
         {confirmVisible && (
           <View style={styles.inlineConfirm}>
             <Text style={styles.inlineConfirmText}>Change pushed to GitHub!</Text>
+          </View>
+        )}
+      </View>
+    </ScrollView>
+  );
+
+  const renderExecutingStep = () => (
+    <ScrollView style={styles.resultContainer}>
+      <View style={styles.resultHeader}>
+        <Text style={styles.resultTitle}>Executing Changes</Text>
+        <TouchableOpacity style={styles.actionButton} onPress={handleReset}>
+          <Text style={styles.actionButtonText}>Cancel</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.executionBox}>
+        <View style={styles.executionStatus}>
+          <ActivityIndicator size="large" color="#007AFF" />
+          <Text style={styles.executionStatusText}>
+            {currentJob?.progress || 'Initializing coding agent...'}
+          </Text>
+        </View>
+
+        {currentJob && (
+          <View style={styles.executionDetails}>
+            <Text style={styles.executionDetailText}>
+              Job ID: {currentJob.id}
+            </Text>
+            <Text style={styles.executionDetailText}>
+              Status: {currentJob.status}
+            </Text>
+            <Text style={styles.executionDetailText}>
+              Repository: {currentJob.repo_url}
+            </Text>
+            {currentJob.started_at && (
+              <Text style={styles.executionDetailText}>
+                Started: {new Date(currentJob.started_at).toLocaleTimeString()}
+              </Text>
+            )}
+          </View>
+        )}
+
+        {jobPolling && (
+          <View style={styles.pollingIndicator}>
+            <Text style={styles.pollingText}>
+              Checking progress every 3 seconds...
+            </Text>
+          </View>
+        )}
+
+        {currentJob?.result?.pr_url && (
+          <View style={styles.prSuccessBox}>
+            <Text style={styles.prSuccessTitle}>🎉 Pull Request Created!</Text>
+            <Text style={styles.prSuccessUrl}>{currentJob.result.pr_url}</Text>
+            <TouchableOpacity
+              style={styles.prViewButton}
+              onPress={() => Linking.openURL(currentJob.result!.pr_url!)}
+            >
+              <Text style={styles.prViewButtonText}>View Pull Request</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {currentJob?.status === 'failed' && (
+          <View style={styles.errorBox}>
+            <Text style={styles.errorTitle}>Execution Failed</Text>
+            <Text style={styles.errorText}>
+              {currentJob.error_message || currentJob?.result?.error_message || 'Unknown error occurred'}
+            </Text>
           </View>
         )}
       </View>
@@ -415,6 +618,7 @@ export default function IndexScreen() {
       {currentStep === 'clarify' && renderClarifyStep()}
       {currentStep === 'crs' && renderCRSStep()}
       {currentStep === 'plan' && renderPlanStep()}
+      {currentStep === 'executing' && renderExecutingStep()}
     </ScrollView>
   );
 }
@@ -724,5 +928,100 @@ const styles = StyleSheet.create({
   inlineConfirmText: {
     color: '#2e7d32',
     fontWeight: '600',
+  },
+  // Execution step styles
+  executionBox: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  executionStatus: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  executionStatusText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#007AFF',
+    marginTop: 12,
+    textAlign: 'center',
+  },
+  executionDetails: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+  },
+  executionDetailText: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 4,
+  },
+  pollingIndicator: {
+    backgroundColor: '#e3f2fd',
+    borderRadius: 8,
+    padding: 12,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  pollingText: {
+    fontSize: 12,
+    color: '#1976d2',
+    fontStyle: 'italic',
+  },
+  prSuccessBox: {
+    backgroundColor: '#e8f5e9',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  prSuccessTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#2e7d32',
+    marginBottom: 8,
+  },
+  prSuccessUrl: {
+    fontSize: 12,
+    color: '#2e7d32',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  prViewButton: {
+    backgroundColor: '#2e7d32',
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+  },
+  prViewButtonText: {
+    color: 'white',
+    fontWeight: '600',
+  },
+  errorBox: {
+    backgroundColor: '#ffebee',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+  },
+  errorTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#c62828',
+    marginBottom: 8,
+  },
+  errorText: {
+    fontSize: 14,
+    color: '#c62828',
+    lineHeight: 20,
   },
 });

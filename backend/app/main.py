@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.logging_config import setup_logging
 from app.core.config import settings
-from app.api import health, plan, crs, plan_synthesis, auth
+from app.api import health, plan, crs, plan_synthesis, auth, agent_jobs
 
 setup_logging()
 app = FastAPI(title="Cloud Vibecoder API")
@@ -22,3 +22,4 @@ app.include_router(plan.router, prefix="/api")
 app.include_router(crs.router, prefix="/api")
 app.include_router(plan_synthesis.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
+app.include_router(agent_jobs.router, prefix="/api")
