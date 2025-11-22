@@ -161,6 +161,82 @@ class GitHubService {
   async getOrgRepositories(org: string): Promise<GitHubRepo[]> {
     return this.makeRequest<GitHubRepo[]>(`/orgs/${org}/repos?per_page=100`);
   }
+
+  /**
+   * Create a new branch from the default branch
+   */
+  async createBranch(owner: string, repo: string, branchName: string): Promise<{ ref: string; sha: string }> {
+    // Get the default branch SHA
+    const repoInfo = await this.getRepository(owner, repo);
+    const defaultBranch = repoInfo.default_branch;
+    
+    const branchRef = await this.makeRequest<any>(`/repos/${owner}/${repo}/git/refs/heads/${defaultBranch}`);
+    const sha = branchRef.object.sha;
+
+    // Create new branch
+    const newBranch = await this.makeRequest<any>(`/repos/${owner}/${repo}/git/refs`, {
+      method: 'POST',
+      body: JSON.stringify({
+        ref: `refs/heads/${branchName}`,
+        sha: sha,
+      }),
+    });
+
+    return { ref: newBranch.ref, sha: sha };
+  }
+
+  /**
+   * Create or update a file in a repository
+   */
+  async createOrUpdateFile(
+    owner: string,
+    repo: string,
+    path: string,
+    content: string,
+    message: string,
+    branch: string,
+    sha?: string
+  ): Promise<any> {
+    // Convert content to base64 (React Native compatible)
+    const base64Content = btoa(unescape(encodeURIComponent(content)));
+    
+    const body: any = {
+      message,
+      content: base64Content,
+      branch,
+    };
+
+    if (sha) {
+      body.sha = sha;
+    }
+
+    return this.makeRequest(`/repos/${owner}/${repo}/contents/${path}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
+  }
+
+  /**
+   * Create a pull request
+   */
+  async createPullRequest(
+    owner: string,
+    repo: string,
+    title: string,
+    body: string,
+    head: string,
+    base: string = 'main'
+  ): Promise<{ html_url: string; number: number }> {
+    return this.makeRequest<any>(`/repos/${owner}/${repo}/pulls`, {
+      method: 'POST',
+      body: JSON.stringify({
+        title,
+        body,
+        head,
+        base,
+      }),
+    });
+  }
 }
 
 export default new GitHubService();
