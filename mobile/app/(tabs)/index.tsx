@@ -3,7 +3,10 @@ import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Activi
 import { router } from 'expo-router';
 import githubService, { type GitHubRepo } from '../../services/githubService';
 
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://cloud-vibecoder-1.onrender.com';
+// For local development: Use your computer's IP address if testing on physical device
+// For iOS Simulator: use 'http://localhost:8000'
+// For Android Emulator: use 'http://10.0.2.2:8000'
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
 
 interface CRS {
   goal: string;
