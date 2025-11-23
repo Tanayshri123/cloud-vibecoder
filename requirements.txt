@@ -7,3 +7,8 @@ starlette>=0.27.0
 typing-extensions>=4.8.0
 pydantic-settings
 httpx
+
+# Phase 1: VM Infrastructure
+e2b-code-interpreter>=0.0.8
+GitPython>=3.1.40
+PyGithub>=2.1.1
