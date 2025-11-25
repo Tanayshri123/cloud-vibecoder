@@ -38,11 +38,9 @@ export default function LoginScreen() {
 // So app/(auth)/oauth-redirect.tsx is accessible at /oauth-redirect
 const redirectUri = useMemo(
   () => {
-    // For web/localhost: use http://localhost:8081/oauth-redirect
-    // For Expo Go on device: use exp://... (requires GitHub OAuth App config update)
     const uri = makeRedirectUri({
-      path: 'oauth-redirect',
-      // Omit 'scheme' to use default (http for web, exp for Expo Go)
+      scheme: 'exp',
+      path: 'oauth-redirect'  // Without (auth) since it's just a route group
     });
     console.log('[DEBUG] Generated Redirect URI:', uri);
     return uri;
