@@ -350,26 +350,22 @@ User Request: ${prompt}
         selectedRepo.default_branch
       );
 
+      // Show success and automatically return to input screen
       Alert.alert(
         'Pull Request Created!',
         `PR #${pr.number} has been created successfully.`,
         [
           {
-            text: 'View PR',
-            onPress: () => {
-              // You could open the PR URL in browser here
-              console.log('PR URL:', pr.html_url);
-            }
-          },
-          {
             text: 'OK',
-            style: 'default'
+            onPress: () => handleReset()
           }
         ]
       );
-
-      setConfirmVisible(true);
-      setTimeout(() => setConfirmVisible(false), 3000);
+      
+      // Also reset after a short delay if they don't click OK
+      setTimeout(() => {
+        handleReset();
+      }, 3000);
     } catch (err) {
       console.error('Error creating PR:', err);
       Alert.alert(
