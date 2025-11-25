@@ -347,7 +347,7 @@ export default function IndexScreen() {
       
       let jobCompleted = false;
       let pollAttempts = 0;
-      const maxAttempts = 60; // 2 minutes max (2 second intervals)
+      const maxAttempts = 180; // 6 minutes max (2 second intervals) - AI coding takes time!
       
       while (!jobCompleted && pollAttempts < maxAttempts) {
         await new Promise(resolve => setTimeout(resolve, 2000)); // Poll every 2 seconds
