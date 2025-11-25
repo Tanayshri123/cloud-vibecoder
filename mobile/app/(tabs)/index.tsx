@@ -418,6 +418,7 @@ export default function IndexScreen() {
 
       setJobProgress({ status: 'completed', message: 'Pull request created!', percentage: 100 });
 
+      // Show success and automatically return to input screen
       Alert.alert(
         '✅ Pull Request Created!',
         `PR #${pr.number} has been created with real code changes!\n\n📊 Stats:\n• Files changed: ${result.files_changed}\n• Commits: ${result.commits_created}\n• AI tokens used: ${result.tokens_used}`,
