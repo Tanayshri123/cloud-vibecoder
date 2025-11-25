@@ -1,7 +1,25 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Alert, FlatList } from 'react-native';
+import React, { useEffect, useState, useRef } from 'react';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Alert, FlatList, Animated, Dimensions, KeyboardAvoidingView, Platform } from 'react-native';
 import { router } from 'expo-router';
 import githubService, { type GitHubRepo } from '../../services/githubService';
+import { Accent, LightTheme, Typography, Spacing, Radius, Shadows } from '../../constants/theme';
+
+const { width } = Dimensions.get('window');
+
+// Get greeting based on time of day
+const getGreeting = (): { line1: string; line2: string } => {
+  const hour = new Date().getHours();
+  
+  if (hour >= 5 && hour < 12) {
+    return { line1: 'Good', line2: 'morning' };
+  } else if (hour >= 12 && hour < 17) {
+    return { line1: 'Good', line2: 'afternoon' };
+  } else if (hour >= 17 && hour < 21) {
+    return { line1: 'Good', line2: 'evening' };
+  } else {
+    return { line1: 'Good', line2: 'night' };
+  }
+};
 
 // For local development: Use your computer's IP address if testing on physical device
 // For iOS Simulator: use 'http://localhost:8000'
@@ -98,6 +116,30 @@ export default function IndexScreen() {
   const [jobProgress, setJobProgress] = useState<{status: string; message: string; percentage: number} | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
 
+  // Greeting
+  const [greeting, setGreeting] = useState(getGreeting());
+
+  // Animations
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
+
+  useEffect(() => {
+    setGreeting(getGreeting());
+    
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 500,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
+
   useEffect(() => {
     const init = async () => {
       try {
@@ -125,7 +167,6 @@ export default function IndexScreen() {
       const [owner, repoName] = selectedRepo.full_name.split('/');
       const contents = await githubService.getRepositoryContents(owner, repoName, path);
       
-      // GitHub API returns either an array (directory) or object (file)
       const items = Array.isArray(contents) ? contents : [contents];
       
       const mapped: FileTreeItem[] = items.map((item: any) => ({
@@ -136,7 +177,6 @@ export default function IndexScreen() {
         sha: item.sha,
       }));
 
-      // Sort: directories first, then alphabetically
       mapped.sort((a, b) => {
         if (a.type === b.type) return a.name.localeCompare(b.name);
         return a.type === 'dir' ? -1 : 1;
@@ -157,7 +197,6 @@ export default function IndexScreen() {
       setPathHistory([...pathHistory, currentPath]);
       fetchFileTree(item.path);
     } else {
-      // For files, you could show file contents or just indicate selection
       Alert.alert('File Selected', `Path: ${item.path}\nSize: ${item.size} bytes`);
     }
   };
@@ -315,7 +354,6 @@ export default function IndexScreen() {
       const [owner, repoName] = selectedRepo.full_name.split('/');
       const branchName = `vibecoder-${Date.now()}`;
 
-      // Step 1: Create job to execute coding agent
       console.log('Creating coding job...');
       setJobProgress({ status: 'creating_job', message: 'Creating coding job...', percentage: 10 });
       
@@ -342,15 +380,14 @@ export default function IndexScreen() {
       setJobId(createdJobId);
       console.log('Job created:', createdJobId);
 
-      // Step 2: Poll for job progress
       setJobProgress({ status: 'executing', message: 'Generating code with AI...', percentage: 20 });
       
       let jobCompleted = false;
       let pollAttempts = 0;
-      const maxAttempts = 180; // 6 minutes max (2 second intervals) - AI coding takes time!
+      const maxAttempts = 180;
       
       while (!jobCompleted && pollAttempts < maxAttempts) {
-        await new Promise(resolve => setTimeout(resolve, 2000)); // Poll every 2 seconds
+        await new Promise(resolve => setTimeout(resolve, 2000));
         pollAttempts++;
         
         const progressRes = await fetch(`${BASE_URL}/api/jobs/${createdJobId}/progress`);
@@ -377,7 +414,6 @@ export default function IndexScreen() {
         throw new Error('Job timed out. Please try again.');
       }
 
-      // Step 3: Get job result
       setJobProgress({ status: 'getting_result', message: 'Getting results...', percentage: 85 });
       
       const resultRes = await fetch(`${BASE_URL}/api/jobs/${createdJobId}/result`);
@@ -392,7 +428,6 @@ export default function IndexScreen() {
         throw new Error(result.error_message || 'Job failed');
       }
 
-      // Step 4: Create pull request
       setJobProgress({ status: 'creating_pr', message: 'Creating pull request...', percentage: 90 });
       
       const prRes = await fetch(`${BASE_URL}/api/github/create-pr`, {
@@ -418,7 +453,6 @@ export default function IndexScreen() {
 
       setJobProgress({ status: 'completed', message: 'Pull request created!', percentage: 100 });
 
-      // Show success and automatically return to input screen
       Alert.alert(
         '✅ Pull Request Created!',
         `PR #${pr.number} has been created with real code changes!\n\n📊 Stats:\n• Files changed: ${result.files_changed}\n• Commits: ${result.commits_created}\n• AI tokens used: ${result.tokens_used}`,
@@ -427,7 +461,6 @@ export default function IndexScreen() {
             text: 'View PR',
             onPress: () => {
               console.log('PR URL:', pr.html_url);
-              // Could open in browser with Linking.openURL(pr.html_url)
             }
           },
           {
@@ -437,7 +470,7 @@ export default function IndexScreen() {
               setConfirmVisible(true);
               setTimeout(() => {
                 setConfirmVisible(false);
-                handleReset(); // Reset to start new request
+                handleReset();
               }, 2000);
             }
           }
@@ -461,10 +494,16 @@ export default function IndexScreen() {
   };
 
   const renderInputStep = () => (
-    <View style={styles.form}>
+    <Animated.View 
+      style={[
+        styles.form,
+        { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }
+      ]}
+    >
       {/* Repo selector */}
       {isAuthed ? (
-        <View style={styles.dropdownContainer}>
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>Repository</Text>
           <TouchableOpacity
             style={styles.dropdown}
             onPress={() => setReposOpen((o) => !o)}
@@ -473,7 +512,11 @@ export default function IndexScreen() {
             <Text style={styles.dropdownText} numberOfLines={1}>
               {selectedRepo ? selectedRepo.full_name : 'Select a GitHub repository'}
             </Text>
-            {loadingRepos && <ActivityIndicator size="small" color="#6B7280" />}
+            {loadingRepos ? (
+              <ActivityIndicator size="small" color={Accent.primary} />
+            ) : (
+              <Text style={styles.dropdownChevron}>{reposOpen ? '▲' : '▼'}</Text>
+            )}
           </TouchableOpacity>
 
           {reposOpen && (
@@ -502,7 +545,7 @@ export default function IndexScreen() {
                       </Text>
                     </TouchableOpacity>
                   )}
-                  style={{ maxHeight: 240 }}
+                  style={{ maxHeight: 200 }}
                 />
               )}
             </View>
@@ -510,10 +553,11 @@ export default function IndexScreen() {
         </View>
       ) : (
         <TouchableOpacity
-          style={[styles.dropdown, { justifyContent: 'center' }]}
+          style={styles.authPrompt}
           onPress={() => router.push('/login')}
         >
-          <Text style={[styles.dropdownText, { color: '#6B7280' }]}>Sign in with GitHub to select a repository</Text>
+          <Text style={styles.authPromptIcon}>⬢</Text>
+          <Text style={styles.authPromptText}>Sign in with GitHub to select a repository</Text>
         </TouchableOpacity>
       )}
 
@@ -526,7 +570,8 @@ export default function IndexScreen() {
             fetchFileTree('');
           }}
         >
-          <Text style={styles.fileBrowserButtonText}>📁 Browse Files</Text>
+          <Text style={styles.fileBrowserButtonIcon}>📁</Text>
+          <Text style={styles.fileBrowserButtonText}>Browse Files</Text>
         </TouchableOpacity>
       )}
 
@@ -547,7 +592,7 @@ export default function IndexScreen() {
 
           {loadingFiles ? (
             <View style={styles.fileBrowserLoading}>
-              <ActivityIndicator size="large" color="#007AFF" />
+              <ActivityIndicator size="large" color={Accent.primary} />
             </View>
           ) : (
             <FlatList
@@ -570,109 +615,126 @@ export default function IndexScreen() {
         </View>
       )}
 
-      <TextInput
-        placeholder="Describe your change request"
-        value={prompt}
-        onChangeText={setPrompt}
-        style={[styles.input, styles.textArea]}
-        multiline
-        numberOfLines={3}
-      />
+      {/* Request Input */}
+      <View style={styles.section}>
+        <Text style={styles.sectionLabel}>Change Request</Text>
+        <TextInput
+          placeholder="Describe what you want to build or change..."
+          placeholderTextColor={LightTheme.textTertiary}
+          value={prompt}
+          onChangeText={setPrompt}
+          style={styles.textArea}
+          multiline
+          numberOfLines={4}
+        />
+      </View>
+
       <TouchableOpacity 
-        style={[styles.submitButton, loading && styles.submitButtonDisabled]}
+        style={[styles.primaryButton, loading && styles.buttonDisabled]}
         onPress={handleGenerateCRS}
         disabled={loading}
+        activeOpacity={0.9}
       >
         {loading ? (
-          <ActivityIndicator color="white" />
+          <ActivityIndicator color="#FFFFFF" />
         ) : (
-          <Text style={styles.submitButtonText}>Generate Change Request Spec</Text>
+          <Text style={styles.primaryButtonText}>Generate Specification</Text>
         )}
       </TouchableOpacity>
-    </View>
+    </Animated.View>
   );
 
   const renderCRSStep = () => (
-    <ScrollView style={styles.resultContainer}>
+    <ScrollView style={styles.resultContainer} showsVerticalScrollIndicator={false}>
       <View style={styles.resultHeader}>
-        <Text style={styles.resultTitle}>Change Request Specification</Text>
-        <TouchableOpacity style={styles.actionButton} onPress={handleReset}>
-          <Text style={styles.actionButtonText}>Start Over</Text>
+        <View>
+          <Text style={styles.resultTitle}>Specification</Text>
+          <Text style={styles.resultSubtitle}>Review your change request</Text>
+        </View>
+        <TouchableOpacity style={styles.resetButton} onPress={handleReset}>
+          <Text style={styles.resetButtonText}>Start Over</Text>
         </TouchableOpacity>
       </View>
 
-      <View style={styles.crsBox}>
-        <Text style={styles.crsGoal}>{crs?.goal}</Text>
-        <Text style={styles.crsSummary}>{crs?.summary}</Text>
+      <View style={styles.specCard}>
+        <Text style={styles.specGoal}>{crs?.goal}</Text>
+        <Text style={styles.specSummary}>{crs?.summary}</Text>
         
-        <View style={styles.crsMeta}>
-          <Text style={styles.crsMetaItem}>Priority: {crs?.priority}</Text>
-          <Text style={styles.crsMetaItem}>Scope: {crs?.scope}</Text>
-          <Text style={styles.crsMetaItem}>Complexity: {crs?.estimated_complexity}</Text>
-          <Text style={styles.crsMetaItem}>Confidence: {Math.round((crs?.confidence_score || 0) * 100)}%</Text>
+        <View style={styles.metaRow}>
+          <View style={styles.metaBadge}>
+            <Text style={styles.metaBadgeText}>{crs?.priority}</Text>
+          </View>
+          <View style={styles.metaBadge}>
+            <Text style={styles.metaBadgeText}>{crs?.scope}</Text>
+          </View>
+          <View style={[styles.metaBadge, styles.metaBadgeAccent]}>
+            <Text style={styles.metaBadgeTextAccent}>{Math.round((crs?.confidence_score || 0) * 100)}%</Text>
+          </View>
         </View>
 
         {crs?.constraints && crs.constraints.length > 0 && (
-          <View style={styles.crsSection}>
-            <Text style={styles.crsSectionTitle}>Constraints</Text>
+          <View style={styles.specSection}>
+            <Text style={styles.specSectionTitle}>Constraints</Text>
             {crs.constraints.map((constraint, i) => (
-              <Text key={i} style={styles.crsItem}>• {constraint.description}</Text>
+              <View key={i} style={styles.listItem}>
+                <View style={styles.listItemBullet} />
+                <Text style={styles.listItemText}>{constraint.description}</Text>
+              </View>
             ))}
           </View>
         )}
 
         {crs?.acceptance_criteria && crs.acceptance_criteria.length > 0 && (
-          <View style={styles.crsSection}>
-            <Text style={styles.crsSectionTitle}>Acceptance Criteria</Text>
+          <View style={styles.specSection}>
+            <Text style={styles.specSectionTitle}>Acceptance Criteria</Text>
             {crs.acceptance_criteria.map((criteria, i) => (
-              <Text key={i} style={styles.crsItem}>• {criteria.criterion}</Text>
-            ))}
-          </View>
-        )}
-
-        {crs?.clarifying_questions && crs.clarifying_questions.length > 0 && (
-          <View style={styles.crsSection}>
-            <Text style={styles.crsSectionTitle}>Clarifying Questions</Text>
-            {crs.clarifying_questions.map((question, i) => (
-              <Text key={i} style={styles.crsItem}>• {question.question}</Text>
+              <View key={i} style={styles.checklistItem}>
+                <View style={styles.checkbox} />
+                <Text style={styles.checklistText}>{criteria.criterion}</Text>
+              </View>
             ))}
           </View>
         )}
       </View>
 
       <TouchableOpacity 
-        style={[styles.submitButton, loading && styles.submitButtonDisabled]}
+        style={[styles.primaryButton, loading && styles.buttonDisabled]}
         onPress={handleGeneratePlan}
         disabled={loading}
+        activeOpacity={0.9}
       >
         {loading ? (
-          <ActivityIndicator color="white" />
+          <ActivityIndicator color="#FFFFFF" />
         ) : (
-          <Text style={styles.submitButtonText}>Generate Implementation Plan</Text>
+          <Text style={styles.primaryButtonText}>Generate Implementation Plan</Text>
         )}
       </TouchableOpacity>
     </ScrollView>
   );
 
   const renderClarifyStep = () => (
-    <ScrollView style={styles.resultContainer}>
+    <ScrollView style={styles.resultContainer} showsVerticalScrollIndicator={false}>
       <View style={styles.resultHeader}>
-        <Text style={styles.resultTitle}>Quick Clarification</Text>
-        <TouchableOpacity style={styles.actionButton} onPress={handleReset}>
-          <Text style={styles.actionButtonText}>Cancel</Text>
+        <View>
+          <Text style={styles.resultTitle}>Clarification</Text>
+          <Text style={styles.resultSubtitle}>Help us understand better</Text>
+        </View>
+        <TouchableOpacity style={styles.resetButton} onPress={handleReset}>
+          <Text style={styles.resetButtonText}>Cancel</Text>
         </TouchableOpacity>
       </View>
 
-      <View style={styles.crsBox}>
-        <Text style={styles.crsSummary}>We need a bit more detail to generate a precise plan.</Text>
+      <View style={styles.specCard}>
+        <Text style={styles.specSummary}>We need a bit more detail to generate a precise plan.</Text>
         {clarifyQuestions.map((q, idx) => (
-          <View key={idx} style={{ marginBottom: 12 }}>
-            <Text style={styles.crsSectionTitle}>{q.question}</Text>
+          <View key={idx} style={styles.questionBlock}>
+            <Text style={styles.questionText}>{q.question}</Text>
             <TextInput
               placeholder="Your answer"
+              placeholderTextColor={LightTheme.textTertiary}
               value={clarifyAnswers[idx] || ''}
               onChangeText={(t) => setClarifyAnswers(prev => ({ ...prev, [idx]: t }))}
-              style={[styles.input, styles.textArea]}
+              style={styles.answerInput}
               multiline
             />
           </View>
@@ -680,53 +742,67 @@ export default function IndexScreen() {
       </View>
 
       <TouchableOpacity 
-        style={[styles.submitButton, loading && styles.submitButtonDisabled]}
+        style={[styles.primaryButton, loading && styles.buttonDisabled]}
         onPress={handleSubmitClarifications}
         disabled={loading}
+        activeOpacity={0.9}
       >
         {loading ? (
-          <ActivityIndicator color="white" />
+          <ActivityIndicator color="#FFFFFF" />
         ) : (
-          <Text style={styles.submitButtonText}>Continue</Text>
+          <Text style={styles.primaryButtonText}>Continue</Text>
         )}
       </TouchableOpacity>
     </ScrollView>
   );
 
   const renderPlanStep = () => (
-    <ScrollView style={styles.resultContainer}>
+    <ScrollView style={styles.resultContainer} showsVerticalScrollIndicator={false}>
       <View style={styles.resultHeader}>
-        <Text style={styles.resultTitle}>Implementation Plan</Text>
-        <TouchableOpacity style={styles.actionButton} onPress={handleReset}>
-          <Text style={styles.actionButtonText}>Start Over</Text>
+        <View>
+          <Text style={styles.resultTitle}>Implementation</Text>
+          <Text style={styles.resultSubtitle}>Your execution plan</Text>
+        </View>
+        <TouchableOpacity style={styles.resetButton} onPress={handleReset}>
+          <Text style={styles.resetButtonText}>Start Over</Text>
         </TouchableOpacity>
       </View>
 
       {planModelUsed === 'fallback' && (
-        <View style={styles.warningBox}>
-          <Text style={styles.warningTitle}>⚠️ Showing a fallback plan</Text>
-          <Text style={styles.warningText}>
-            Configure OPENAI_API_KEY on the backend to generate a detailed plan using the repository structure.
-          </Text>
+        <View style={styles.warningBanner}>
+          <Text style={styles.warningIcon}>⚠️</Text>
+          <Text style={styles.warningText}>Showing fallback plan. Configure API key for detailed plans.</Text>
         </View>
       )}
 
-      <View style={styles.planBox}>
+      <View style={styles.planCard}>
         <Text style={styles.planTitle}>{plan?.title}</Text>
         <Text style={styles.planSummary}>{plan?.summary}</Text>
         
-        <View style={styles.planMeta}>
-          <Text style={styles.planMetaItem}>Total Time: {plan?.estimated_total_time}</Text>
-          <Text style={styles.planMetaItem}>Complexity: {plan?.complexity_score}/10</Text>
-          <Text style={styles.planMetaItem}>Confidence: {Math.round((plan?.confidence_score || 0) * 100)}%</Text>
-          <Text style={styles.planMetaItem}>Blast Radius: {plan?.blast_radius}</Text>
+        <View style={styles.statsRow}>
+          <View style={styles.statItem}>
+            <Text style={styles.statValue}>{plan?.estimated_total_time}</Text>
+            <Text style={styles.statLabel}>Time</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <Text style={styles.statValue}>{plan?.complexity_score}/10</Text>
+            <Text style={styles.statLabel}>Complexity</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <Text style={styles.statValue}>{Math.round((plan?.confidence_score || 0) * 100)}%</Text>
+            <Text style={styles.statLabel}>Confidence</Text>
+          </View>
         </View>
 
         <View style={styles.planSection}>
-          <Text style={styles.planSectionTitle}>Implementation Steps</Text>
+          <Text style={styles.planSectionTitle}>Steps</Text>
           {plan?.steps.map((step) => (
-            <View key={step.step_number} style={styles.stepItem}>
-              <Text style={styles.stepNumber}>{step.step_number}</Text>
+            <View key={step.step_number} style={styles.stepCard}>
+              <View style={styles.stepNumber}>
+                <Text style={styles.stepNumberText}>{step.step_number}</Text>
+              </View>
               <View style={styles.stepContent}>
                 <Text style={styles.stepTitle}>{step.title}</Text>
                 <Text style={styles.stepDescription}>{step.description}</Text>
@@ -739,9 +815,11 @@ export default function IndexScreen() {
         <View style={styles.planSection}>
           <Text style={styles.planSectionTitle}>Files to Change</Text>
           {plan?.files_to_change.map((file, i) => (
-            <View key={i} style={styles.fileItem}>
+            <View key={i} style={styles.fileCard}>
               <Text style={styles.filePath}>{file.path}</Text>
-              <Text style={styles.fileIntent}>{file.intent}</Text>
+              <View style={styles.fileIntentBadge}>
+                <Text style={styles.fileIntentText}>{file.intent}</Text>
+              </View>
               <Text style={styles.fileRationale}>{file.rationale}</Text>
             </View>
           ))}
@@ -749,48 +827,52 @@ export default function IndexScreen() {
 
         {/* Progress tracker */}
         {jobProgress && (
-          <View style={styles.progressContainer}>
-            <View style={styles.progressHeader}>
-              <Text style={styles.progressStatus}>{jobProgress.message}</Text>
-              <Text style={styles.progressPercentage}>{jobProgress.percentage}%</Text>
+          <View style={styles.jobProgressContainer}>
+            <View style={styles.jobProgressHeader}>
+              <Text style={styles.jobProgressMessage}>{jobProgress.message}</Text>
+              <Text style={styles.jobProgressPercentage}>{jobProgress.percentage}%</Text>
             </View>
-            <View style={styles.progressBarContainer}>
-              <View style={[styles.progressBar, { width: `${jobProgress.percentage}%` }]} />
+            <View style={styles.jobProgressBarBg}>
+              <View style={[styles.jobProgressBar, { width: `${jobProgress.percentage}%` }]} />
             </View>
             {jobId && (
-              <Text style={styles.progressJobId}>Job ID: {jobId}</Text>
+              <Text style={styles.jobProgressId}>Job: {jobId.slice(0, 8)}...</Text>
             )}
           </View>
         )}
 
-        <View style={styles.actionRow}>
+        <View style={styles.actionButtons}>
           <TouchableOpacity
-            style={[styles.acceptButton, creatingPR && styles.submitButtonDisabled]}
+            style={[styles.executeButton, creatingPR && styles.buttonDisabled]}
             onPress={handleAcceptPlan}
             disabled={creatingPR}
+            activeOpacity={0.9}
           >
             {creatingPR ? (
-              <ActivityIndicator color="white" size="small" />
+              <ActivityIndicator color="#FFFFFF" size="small" />
             ) : (
-              <Text style={styles.acceptText}>🤖 Execute with AI Agent</Text>
+              <>
+                <Text style={styles.executeButtonIcon}>🤖</Text>
+                <Text style={styles.executeButtonText}>Execute with AI</Text>
+              </>
             )}
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.declineButton, creatingPR && styles.submitButtonDisabled]}
+            style={[styles.declineButton, creatingPR && styles.buttonDisabled]}
             onPress={() => {
               setPlan(null);
               setCurrentStep('input');
             }}
             disabled={creatingPR}
           >
-            <Text style={styles.declineText}>Decline</Text>
+            <Text style={styles.declineButtonText}>Decline</Text>
           </TouchableOpacity>
         </View>
 
         {confirmVisible && (
-          <View style={styles.inlineConfirm}>
-            <Text style={styles.inlineConfirmText}>✅ Real code changes pushed to GitHub!</Text>
+          <View style={styles.successBanner}>
+            <Text style={styles.successText}>✅ Code changes pushed to GitHub!</Text>
           </View>
         )}
       </View>
@@ -798,98 +880,254 @@ export default function IndexScreen() {
   );
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Cloud Vibecoder</Text>
-        <TouchableOpacity 
-          style={styles.logoutButton}
-          onPress={() => router.push('/welcome')}
-        >
-          <Text style={styles.logoutText}>Logout</Text>
-        </TouchableOpacity>
-      </View>
+    <KeyboardAvoidingView 
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+    >
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.greeting}>{greeting.line1}</Text>
+            <Text style={styles.greetingAccent}>{greeting.line2}</Text>
+          </View>
+          <TouchableOpacity 
+            style={styles.profileButton}
+            onPress={() => router.push('/welcome')}
+          >
+            <Text style={styles.profileButtonText}>CV</Text>
+          </TouchableOpacity>
+        </View>
 
-      {currentStep === 'input' && renderInputStep()}
-      {currentStep === 'clarify' && renderClarifyStep()}
-      {currentStep === 'crs' && renderCRSStep()}
-      {currentStep === 'plan' && renderPlanStep()}
-    </ScrollView>
+        {currentStep === 'input' && renderInputStep()}
+        {currentStep === 'clarify' && renderClarifyStep()}
+        {currentStep === 'crs' && renderCRSStep()}
+        {currentStep === 'plan' && renderPlanStep()}
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { 
+    flex: 1,
+    backgroundColor: LightTheme.background,
+  },
+  scrollContent: {
     flexGrow: 1,
-    backgroundColor: '#f8f9fa',
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.xxl + Spacing.lg,
+    paddingBottom: Spacing.xl,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: Spacing.xl,
+  },
+  greeting: {
+    ...Typography.displaySmall,
+    color: LightTheme.text,
+    letterSpacing: -0.5,
+  },
+  greetingAccent: {
+    ...Typography.displaySmall,
+    color: Accent.primary,
+    letterSpacing: -0.5,
+    marginTop: -4,
+  },
+  profileButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Accent.primary,
+    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 32,
-    paddingTop: 20,
+    ...Shadows.light.md,
   },
-  title: { 
-    fontSize: 28, 
-    fontWeight: 'bold', 
-    color: '#1a1a1a',
-  },
-  logoutButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: '#ff3b30',
-    borderRadius: 8,
-  },
-  logoutText: {
-    color: 'white',
-    fontWeight: '600',
+  profileButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
   },
   form: {
-    marginBottom: 24,
+    flex: 1,
   },
-  input: {
-    backgroundColor: 'white',
-    borderWidth: 1,
-    borderColor: '#e1e5e9',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+  section: {
+    marginBottom: Spacing.lg,
+  },
+  sectionLabel: {
+    ...Typography.labelMedium,
+    color: LightTheme.textSecondary,
+    marginBottom: Spacing.sm,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  dropdown: {
+    backgroundColor: LightTheme.backgroundSecondary,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  dropdownText: {
+    ...Typography.bodyLarge,
+    color: LightTheme.text,
+    flex: 1,
+    marginRight: Spacing.sm,
+  },
+  dropdownChevron: {
+    fontSize: 12,
+    color: LightTheme.textTertiary,
+  },
+  dropdownList: {
+    backgroundColor: LightTheme.surface,
+    borderRadius: Radius.md,
+    marginTop: Spacing.sm,
+    ...Shadows.light.md,
+    overflow: 'hidden',
+  },
+  dropdownEmpty: {
+    padding: Spacing.md,
+    ...Typography.bodyMedium,
+    color: LightTheme.textTertiary,
+  },
+  dropdownItem: {
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: LightTheme.borderLight,
+  },
+  dropdownItemText: {
+    ...Typography.bodyMedium,
+    color: LightTheme.text,
+  },
+  authPrompt: {
+    backgroundColor: LightTheme.backgroundSecondary,
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.lg,
+  },
+  authPromptIcon: {
+    fontSize: 20,
+    marginRight: Spacing.sm,
+  },
+  authPromptText: {
+    ...Typography.bodyMedium,
+    color: LightTheme.textSecondary,
+    flex: 1,
+  },
+  fileBrowserButton: {
+    backgroundColor: LightTheme.backgroundSecondary,
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.lg,
+  },
+  fileBrowserButtonIcon: {
+    fontSize: 18,
+    marginRight: Spacing.sm,
+  },
+  fileBrowserButtonText: {
+    ...Typography.labelLarge,
+    color: Accent.primary,
+  },
+  fileBrowserContainer: {
+    backgroundColor: LightTheme.surface,
+    borderRadius: Radius.lg,
+    marginBottom: Spacing.lg,
+    maxHeight: 350,
+    ...Shadows.light.md,
+    overflow: 'hidden',
+  },
+  fileBrowserHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: LightTheme.border,
+    backgroundColor: LightTheme.backgroundSecondary,
+  },
+  fileBrowserBackButton: {
+    paddingHorizontal: Spacing.sm,
+  },
+  fileBrowserBackText: {
+    ...Typography.labelMedium,
+    color: Accent.primary,
+  },
+  fileBrowserPath: {
+    flex: 1,
+    ...Typography.bodySmall,
+    color: LightTheme.textSecondary,
+    textAlign: 'center',
+    marginHorizontal: Spacing.sm,
+  },
+  fileBrowserCloseButton: {
+    paddingHorizontal: Spacing.sm,
+  },
+  fileBrowserCloseText: {
+    fontSize: 18,
+    color: LightTheme.textTertiary,
+  },
+  fileBrowserLoading: {
+    padding: Spacing.xxl,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fileTreeList: {
+    maxHeight: 280,
+  },
+  fileTreeItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: LightTheme.borderLight,
+  },
+  fileTreeIcon: {
+    fontSize: 18,
+    marginRight: Spacing.md,
+  },
+  fileTreeName: {
+    flex: 1,
+    ...Typography.bodyMedium,
+    color: LightTheme.text,
   },
   textArea: {
-    height: 80,
+    backgroundColor: LightTheme.backgroundSecondary,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
+    ...Typography.bodyLarge,
+    color: LightTheme.text,
+    minHeight: 100,
     textAlignVertical: 'top',
   },
-  submitButton: {
-    backgroundColor: '#007AFF',
-    borderRadius: 12,
-    paddingVertical: 16,
+  primaryButton: {
+    backgroundColor: Accent.primary,
+    borderRadius: Radius.md,
+    paddingVertical: Spacing.md + 2,
     alignItems: 'center',
-    marginTop: 8,
-    shadowColor: '#007AFF',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
+    ...Shadows.light.md,
   },
-  submitButtonDisabled: {
-    backgroundColor: '#ccc',
+  buttonDisabled: {
+    opacity: 0.6,
   },
-  submitButtonText: {
-    color: 'white',
-    fontSize: 18,
+  primaryButtonText: {
+    ...Typography.labelLarge,
+    color: '#FFFFFF',
     fontWeight: '600',
   },
   resultContainer: {
@@ -898,434 +1136,360 @@ const styles = StyleSheet.create({
   resultHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
+    alignItems: 'flex-start',
+    marginBottom: Spacing.lg,
   },
   resultTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
+    ...Typography.h1,
+    color: LightTheme.text,
   },
-  actionButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: '#6c757d',
-    borderRadius: 6,
+  resultSubtitle: {
+    ...Typography.bodyMedium,
+    color: LightTheme.textSecondary,
+    marginTop: 2,
   },
-  actionButtonText: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: '600',
+  resetButton: {
+    backgroundColor: LightTheme.backgroundSecondary,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.sm,
   },
-  crsBox: {
-    backgroundColor: 'white',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+  resetButtonText: {
+    ...Typography.labelMedium,
+    color: LightTheme.textSecondary,
   },
-  crsGoal: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
-    marginBottom: 8,
+  specCard: {
+    backgroundColor: LightTheme.surface,
+    borderRadius: Radius.lg,
+    padding: Spacing.lg,
+    marginBottom: Spacing.lg,
+    ...Shadows.light.md,
   },
-  crsSummary: {
-    fontSize: 16,
-    color: '#666',
-    marginBottom: 16,
-    lineHeight: 22,
+  specGoal: {
+    ...Typography.h2,
+    color: LightTheme.text,
+    marginBottom: Spacing.sm,
   },
-  crsMeta: {
+  specSummary: {
+    ...Typography.bodyLarge,
+    color: LightTheme.textSecondary,
+    marginBottom: Spacing.md,
+    lineHeight: 24,
+  },
+  metaRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginBottom: 16,
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
   },
-  crsMetaItem: {
-    fontSize: 14,
-    color: '#007AFF',
-    backgroundColor: '#f0f8ff',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    marginRight: 8,
-    marginBottom: 4,
+  metaBadge: {
+    backgroundColor: LightTheme.backgroundTertiary,
+    paddingHorizontal: Spacing.sm + 2,
+    paddingVertical: Spacing.xs + 2,
+    borderRadius: Radius.sm,
   },
-  crsSection: {
-    marginBottom: 16,
+  metaBadgeAccent: {
+    backgroundColor: Accent.primary + '20',
   },
-  crsSectionTitle: {
-    fontSize: 16,
+  metaBadgeText: {
+    ...Typography.labelSmall,
+    color: LightTheme.textSecondary,
+    textTransform: 'uppercase',
+  },
+  metaBadgeTextAccent: {
+    ...Typography.labelSmall,
+    color: Accent.primary,
     fontWeight: '600',
-    color: '#1a1a1a',
-    marginBottom: 8,
   },
-  crsItem: {
-    fontSize: 14,
-    color: '#333',
-    marginBottom: 4,
-    lineHeight: 20,
+  specSection: {
+    marginTop: Spacing.md,
   },
-  planBox: {
-    backgroundColor: 'white',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+  specSectionTitle: {
+    ...Typography.labelLarge,
+    color: LightTheme.text,
+    marginBottom: Spacing.sm,
   },
-  planTitle: { 
-    fontSize: 22, 
-    fontWeight: 'bold', 
-    marginBottom: 12,
-    color: '#1a1a1a',
+  listItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: Spacing.xs,
   },
-  planSummary: { 
-    color: '#666', 
-    marginBottom: 16,
-    fontSize: 16,
+  listItemBullet: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Accent.primary,
+    marginTop: 8,
+    marginRight: Spacing.sm,
+  },
+  listItemText: {
+    flex: 1,
+    ...Typography.bodyMedium,
+    color: LightTheme.textSecondary,
     lineHeight: 22,
   },
-  planMeta: {
+  checklistItem: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginBottom: 20,
+    alignItems: 'flex-start',
+    marginBottom: Spacing.sm,
   },
-  planMetaItem: {
-    fontSize: 14,
-    color: '#28a745',
-    backgroundColor: '#f0fff4',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    marginRight: 8,
-    marginBottom: 4,
+  checkbox: {
+    width: 18,
+    height: 18,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: LightTheme.border,
+    marginRight: Spacing.sm,
+    marginTop: 2,
+  },
+  checklistText: {
+    flex: 1,
+    ...Typography.bodyMedium,
+    color: LightTheme.text,
+    lineHeight: 22,
+  },
+  questionBlock: {
+    marginTop: Spacing.md,
+  },
+  questionText: {
+    ...Typography.labelLarge,
+    color: LightTheme.text,
+    marginBottom: Spacing.sm,
+  },
+  answerInput: {
+    backgroundColor: LightTheme.backgroundSecondary,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
+    ...Typography.bodyMedium,
+    color: LightTheme.text,
+    minHeight: 80,
+    textAlignVertical: 'top',
+  },
+  warningBanner: {
+    backgroundColor: '#FFF4E5',
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.md,
+  },
+  warningIcon: {
+    fontSize: 16,
+    marginRight: Spacing.sm,
+  },
+  warningText: {
+    flex: 1,
+    ...Typography.bodySmall,
+    color: '#8A5300',
+  },
+  planCard: {
+    backgroundColor: LightTheme.surface,
+    borderRadius: Radius.lg,
+    padding: Spacing.lg,
+    marginBottom: Spacing.lg,
+    ...Shadows.light.md,
+  },
+  planTitle: {
+    ...Typography.h2,
+    color: LightTheme.text,
+    marginBottom: Spacing.sm,
+  },
+  planSummary: {
+    ...Typography.bodyLarge,
+    color: LightTheme.textSecondary,
+    marginBottom: Spacing.lg,
+    lineHeight: 24,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    backgroundColor: LightTheme.backgroundSecondary,
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    marginBottom: Spacing.lg,
+  },
+  statItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  statValue: {
+    ...Typography.h3,
+    color: LightTheme.text,
+    fontWeight: '700',
+  },
+  statLabel: {
+    ...Typography.labelSmall,
+    color: LightTheme.textTertiary,
+    marginTop: 2,
+  },
+  statDivider: {
+    width: 1,
+    backgroundColor: LightTheme.border,
+    marginHorizontal: Spacing.sm,
   },
   planSection: {
-    marginBottom: 20,
+    marginBottom: Spacing.lg,
   },
   planSectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1a1a1a',
-    marginBottom: 12,
+    ...Typography.labelLarge,
+    color: LightTheme.text,
+    marginBottom: Spacing.md,
   },
-  stepItem: {
+  stepCard: {
     flexDirection: 'row',
-    marginBottom: 12,
-    padding: 12,
-    backgroundColor: '#f8f9fa',
-    borderRadius: 8,
+    backgroundColor: LightTheme.backgroundSecondary,
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    marginBottom: Spacing.sm,
   },
   stepNumber: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#007AFF',
-    marginRight: 12,
-    minWidth: 24,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: Accent.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: Spacing.md,
+  },
+  stepNumberText: {
+    ...Typography.labelMedium,
+    color: '#FFFFFF',
+    fontWeight: '700',
   },
   stepContent: {
     flex: 1,
   },
   stepTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1a1a1a',
+    ...Typography.labelLarge,
+    color: LightTheme.text,
     marginBottom: 4,
   },
   stepDescription: {
-    fontSize: 14,
-    color: '#666',
+    ...Typography.bodySmall,
+    color: LightTheme.textSecondary,
     marginBottom: 4,
     lineHeight: 18,
   },
   stepMeta: {
-    fontSize: 12,
-    color: '#6c757d',
+    ...Typography.labelSmall,
+    color: LightTheme.textTertiary,
   },
-  fileItem: {
-    padding: 12,
-    backgroundColor: '#f8f9fa',
-    borderRadius: 8,
-    marginBottom: 8,
+  fileCard: {
+    backgroundColor: LightTheme.backgroundSecondary,
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    marginBottom: Spacing.sm,
   },
   filePath: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1a1a1a',
-    marginBottom: 4,
+    ...Typography.labelMedium,
+    color: LightTheme.text,
+    fontFamily: 'monospace',
+    marginBottom: Spacing.xs,
   },
-  fileIntent: {
-    fontSize: 12,
-    color: '#007AFF',
-    backgroundColor: '#f0f8ff',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+  fileIntentBadge: {
     alignSelf: 'flex-start',
-    marginBottom: 4,
+    backgroundColor: Accent.primary + '20',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 2,
+    borderRadius: Radius.sm,
+    marginBottom: Spacing.xs,
+  },
+  fileIntentText: {
+    ...Typography.labelSmall,
+    color: Accent.primary,
+    textTransform: 'uppercase',
   },
   fileRationale: {
-    fontSize: 14,
-    color: '#666',
+    ...Typography.bodySmall,
+    color: LightTheme.textSecondary,
     lineHeight: 18,
   },
-  actionRow: {
+  jobProgressContainer: {
+    backgroundColor: Accent.primary + '10',
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    marginBottom: Spacing.lg,
+    borderWidth: 1,
+    borderColor: Accent.primary + '30',
+  },
+  jobProgressHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 16,
-  },
-  acceptButton: {
-    flex: 1,
-    backgroundColor: '#28a745',
-    paddingVertical: 12,
-    borderRadius: 10,
     alignItems: 'center',
-    marginRight: 8,
+    marginBottom: Spacing.sm,
   },
-  acceptText: {
-    color: 'white',
+  jobProgressMessage: {
+    ...Typography.labelMedium,
+    color: Accent.primary,
+    flex: 1,
+  },
+  jobProgressPercentage: {
+    ...Typography.labelLarge,
+    color: Accent.primary,
+    fontWeight: '700',
+  },
+  jobProgressBarBg: {
+    height: 6,
+    backgroundColor: Accent.primary + '30',
+    borderRadius: 3,
+    overflow: 'hidden',
+    marginBottom: Spacing.sm,
+  },
+  jobProgressBar: {
+    height: '100%',
+    backgroundColor: Accent.primary,
+    borderRadius: 3,
+  },
+  jobProgressId: {
+    ...Typography.labelSmall,
+    color: LightTheme.textTertiary,
+    fontFamily: 'monospace',
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+  },
+  executeButton: {
+    flex: 2,
+    backgroundColor: Accent.success,
+    borderRadius: Radius.md,
+    paddingVertical: Spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...Shadows.light.sm,
+  },
+  executeButtonIcon: {
+    fontSize: 18,
+    marginRight: Spacing.sm,
+  },
+  executeButtonText: {
+    ...Typography.labelLarge,
+    color: '#FFFFFF',
     fontWeight: '600',
   },
   declineButton: {
     flex: 1,
-    backgroundColor: '#d0d0d0',
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: 'center',
-    marginLeft: 8,
-  },
-  declineText: {
-    color: '#333',
-    fontWeight: '600',
-  },
-  inlineConfirm: {
-    marginTop: 12,
-    padding: 8,
-    backgroundColor: '#e8f5e9',
-    borderRadius: 8,
-    alignSelf: 'center',
-  },
-  inlineConfirmText: {
-    color: '#2e7d32',
-    fontWeight: '600',
-  },
-  // Dropdown styles for repo selector
-  dropdownContainer: {
-    marginBottom: 16,
-  },
-  dropdown: {
-    backgroundColor: 'white',
-    borderWidth: 1,
-    borderColor: '#e1e5e9',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    minHeight: 48,
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    flexDirection: 'row',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  dropdownText: {
-    fontSize: 16,
-    color: '#1a1a1a',
-    flex: 1,
-    marginRight: 8,
-  },
-  dropdownList: {
-    backgroundColor: 'white',
-    borderWidth: 1,
-    borderColor: '#e1e5e9',
-    borderRadius: 12,
-    marginTop: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  dropdownEmpty: {
-    padding: 16,
-    color: '#6B7280',
-  },
-  dropdownItem: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  dropdownItemText: {
-    fontSize: 16,
-    color: '#1a1a1a',
-  },
-  // File browser styles
-  fileBrowserButton: {
-    backgroundColor: '#f8f9fa',
-    borderWidth: 1,
-    borderColor: '#e1e5e9',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginBottom: 16,
-    alignItems: 'center',
-  },
-  fileBrowserButtonText: {
-    fontSize: 16,
-    color: '#007AFF',
-    fontWeight: '600',
-  },
-  fileBrowserContainer: {
-    backgroundColor: 'white',
-    borderWidth: 1,
-    borderColor: '#e1e5e9',
-    borderRadius: 12,
-    marginBottom: 16,
-    maxHeight: 400,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  fileBrowserHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e1e5e9',
-    backgroundColor: '#f8f9fa',
-    borderTopLeftRadius: 12,
-    borderTopRightRadius: 12,
-  },
-  fileBrowserBackButton: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  fileBrowserBackText: {
-    fontSize: 14,
-    color: '#007AFF',
-    fontWeight: '600',
-  },
-  fileBrowserPath: {
-    flex: 1,
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-    marginHorizontal: 8,
-  },
-  fileBrowserCloseButton: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  fileBrowserCloseText: {
-    fontSize: 18,
-    color: '#666',
-  },
-  fileBrowserLoading: {
-    padding: 40,
+    backgroundColor: LightTheme.backgroundTertiary,
+    borderRadius: Radius.md,
+    paddingVertical: Spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  fileTreeList: {
-    maxHeight: 320,
+  declineButtonText: {
+    ...Typography.labelLarge,
+    color: LightTheme.textSecondary,
   },
-  fileTreeItem: {
-    flexDirection: 'row',
+  successBanner: {
+    backgroundColor: Accent.success + '15',
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    marginTop: Spacing.md,
     alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
   },
-  fileTreeIcon: {
-    fontSize: 20,
-    marginRight: 12,
-  },
-  fileTreeName: {
-    flex: 1,
-    fontSize: 16,
-    color: '#1a1a1a',
-  },
-  // Warning banner styles
-  warningBox: {
-    backgroundColor: '#FFF4E5',
-    borderColor: '#FFC78A',
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 16,
-  },
-  warningTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#8A5300',
-    marginBottom: 4,
-  },
-  warningText: {
-    fontSize: 14,
-    color: '#8A5300',
-    lineHeight: 18,
-  },
-  // Progress tracker styles
-  progressContainer: {
-    backgroundColor: '#f0f8ff',
-    borderWidth: 1,
-    borderColor: '#007AFF',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-  },
-  progressHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  progressStatus: {
-    fontSize: 14,
+  successText: {
+    ...Typography.labelMedium,
+    color: Accent.success,
     fontWeight: '600',
-    color: '#007AFF',
-    flex: 1,
-  },
-  progressPercentage: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#007AFF',
-  },
-  progressBarContainer: {
-    height: 8,
-    backgroundColor: '#e1e5e9',
-    borderRadius: 4,
-    overflow: 'hidden',
-    marginBottom: 8,
-  },
-  progressBar: {
-    height: '100%',
-    backgroundColor: '#007AFF',
-    borderRadius: 4,
-  },
-  progressJobId: {
-    fontSize: 11,
-    color: '#666',
-    fontFamily: 'monospace',
   },
 });

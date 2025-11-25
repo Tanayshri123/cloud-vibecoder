@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,13 +8,11 @@ import {
   RefreshControl,
   ActivityIndicator,
   Linking,
+  Animated,
 } from 'react-native';
 import { router } from 'expo-router';
 import githubService, { GitHubRepo } from '../../services/githubService';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Fonts } from '@/constants/theme';
-import { IconSymbol } from '@/components/ui/icon-symbol';
+import { Accent, LightTheme, Typography, Spacing, Radius, Shadows } from '../../constants/theme';
 
 export default function ExploreScreen() {
   const [repos, setRepos] = useState<GitHubRepo[]>([]);
@@ -23,9 +21,30 @@ export default function ExploreScreen() {
   const [error, setError] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
+  // Animations
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
+
   useEffect(() => {
     checkAuthAndLoadRepos();
   }, []);
+
+  useEffect(() => {
+    if (!loading) {
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 400,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 500,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [loading]);
 
   const checkAuthAndLoadRepos = async () => {
     try {
@@ -71,66 +90,74 @@ export default function ExploreScreen() {
     router.push('/login');
   };
 
-  const renderRepoItem = ({ item }: { item: GitHubRepo }) => (
-    <TouchableOpacity
-      style={styles.repoCard}
-      onPress={() => handleRepoPress(item)}
-      activeOpacity={0.7}>
-      <View style={styles.repoHeader}>
-        <View style={styles.repoTitleContainer}>
-          <IconSymbol
-            name="folder"
-            size={20}
-            color={item.private ? '#FFA500' : '#6B7280'}
-            style={styles.repoIcon}
-          />
-          <Text style={styles.repoName} numberOfLines={1}>
-            {item.name}
-          </Text>
+  const renderRepoItem = ({ item, index }: { item: GitHubRepo; index: number }) => (
+    <Animated.View
+      style={{
+        opacity: fadeAnim,
+        transform: [{ translateY: slideAnim }],
+      }}
+    >
+      <TouchableOpacity
+        style={styles.repoCard}
+        onPress={() => handleRepoPress(item)}
+        activeOpacity={0.8}>
+        <View style={styles.repoHeader}>
+          <View style={styles.repoIconContainer}>
+            <Text style={styles.repoIcon}>{item.private ? '🔒' : '📂'}</Text>
+          </View>
+          <View style={styles.repoTitleContainer}>
+            <Text style={styles.repoName} numberOfLines={1}>
+              {item.name}
+            </Text>
+            <Text style={styles.repoOwner} numberOfLines={1}>
+              {item.owner?.login || item.full_name.split('/')[0]}
+            </Text>
+          </View>
           {item.private && (
             <View style={styles.privateBadge}>
               <Text style={styles.privateBadgeText}>Private</Text>
             </View>
           )}
         </View>
-      </View>
 
-      {item.description && (
-        <Text style={styles.repoDescription} numberOfLines={2}>
-          {item.description}
-        </Text>
-      )}
+        {item.description && (
+          <Text style={styles.repoDescription} numberOfLines={2}>
+            {item.description}
+          </Text>
+        )}
 
-      <View style={styles.repoMeta}>
-        {item.language && (
-          <View style={styles.metaItem}>
-            <View style={[styles.languageDot, { backgroundColor: getLanguageColor(item.language) }]} />
-            <Text style={styles.metaText}>{item.language}</Text>
-          </View>
-        )}
-        {item.stargazers_count > 0 && (
-          <View style={styles.metaItem}>
-            <IconSymbol name="star" size={14} color="#6B7280" />
-            <Text style={styles.metaText}>{item.stargazers_count}</Text>
-          </View>
-        )}
-        {item.forks_count > 0 && (
-          <View style={styles.metaItem}>
-            <IconSymbol name="arrow.triangle.branch" size={14} color="#6B7280" />
-            <Text style={styles.metaText}>{item.forks_count}</Text>
-          </View>
-        )}
-        <Text style={styles.metaText}>
+        <View style={styles.repoMeta}>
+          {item.language && (
+            <View style={styles.metaItem}>
+              <View style={[styles.languageDot, { backgroundColor: getLanguageColor(item.language) }]} />
+              <Text style={styles.metaText}>{item.language}</Text>
+            </View>
+          )}
+          {item.stargazers_count > 0 && (
+            <View style={styles.metaItem}>
+              <Text style={styles.metaIcon}>⭐</Text>
+              <Text style={styles.metaText}>{item.stargazers_count}</Text>
+            </View>
+          )}
+          {item.forks_count > 0 && (
+            <View style={styles.metaItem}>
+              <Text style={styles.metaIcon}>🔀</Text>
+              <Text style={styles.metaText}>{item.forks_count}</Text>
+            </View>
+          )}
+        </View>
+
+        <Text style={styles.updatedText}>
           Updated {formatDate(item.updated_at)}
         </Text>
-      </View>
-    </TouchableOpacity>
+      </TouchableOpacity>
+    </Animated.View>
   );
 
   if (loading) {
     return (
       <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color="#0366d6" />
+        <ActivityIndicator size="large" color={Accent.primary} />
         <Text style={styles.loadingText}>Loading repositories...</Text>
       </View>
     );
@@ -139,15 +166,14 @@ export default function ExploreScreen() {
   if (!isAuthenticated) {
     return (
       <View style={styles.centerContainer}>
-        <IconSymbol name="person.circle" size={80} color="#6B7280" style={styles.emptyIcon} />
-        <ThemedText type="title" style={styles.emptyTitle}>
-          Sign in to View Repositories
-        </ThemedText>
+        <View style={styles.emptyIconContainer}>
+          <Text style={styles.emptyIcon}>⬢</Text>
+        </View>
+        <Text style={styles.emptyTitle}>Sign in to View Repositories</Text>
         <Text style={styles.emptyText}>
           Connect your GitHub account to view and manage your repositories
         </Text>
         <TouchableOpacity style={styles.loginButton} onPress={handleLoginPress}>
-          <IconSymbol name="person.badge.key" size={20} color="#fff" />
           <Text style={styles.loginButtonText}>Sign in with GitHub</Text>
         </TouchableOpacity>
       </View>
@@ -157,25 +183,23 @@ export default function ExploreScreen() {
   if (error) {
     return (
       <View style={styles.centerContainer}>
-        <IconSymbol name="exclamationmark.triangle" size={60} color="#EF4444" style={styles.emptyIcon} />
-        <ThemedText type="title" style={styles.errorTitle}>
-          Error
-        </ThemedText>
+        <View style={[styles.emptyIconContainer, styles.errorIconContainer]}>
+          <Text style={styles.emptyIcon}>!</Text>
+        </View>
+        <Text style={styles.errorTitle}>Something went wrong</Text>
         <Text style={styles.errorText}>{error}</Text>
         <TouchableOpacity style={styles.retryButton} onPress={loadRepositories}>
-          <Text style={styles.retryButtonText}>Retry</Text>
+          <Text style={styles.retryButtonText}>Try Again</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
   return (
-    <ThemedView style={styles.container}>
+    <View style={styles.container}>
       <View style={styles.header}>
-        <ThemedText type="title" style={{ fontFamily: Fonts.rounded }}>
-          My Repositories
-        </ThemedText>
-        <Text style={styles.repoCount}>{repos.length} repositories</Text>
+        <Text style={styles.title}>Repositories</Text>
+        <Text style={styles.subtitle}>{repos.length} repos</Text>
       </View>
 
       <FlatList
@@ -183,17 +207,22 @@ export default function ExploreScreen() {
         renderItem={renderRepoItem}
         keyExtractor={(item) => item.id.toString()}
         contentContainerStyle={styles.listContainer}
+        showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+          <RefreshControl 
+            refreshing={refreshing} 
+            onRefresh={handleRefresh}
+            tintColor={Accent.primary}
+          />
         }
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <IconSymbol name="folder" size={60} color="#6B7280" style={styles.emptyIcon} />
+            <Text style={styles.emptyIcon}>📭</Text>
             <Text style={styles.emptyText}>No repositories found</Text>
           </View>
         }
       />
-    </ThemedView>
+    </View>
   );
 }
 
@@ -218,7 +247,7 @@ function getLanguageColor(language: string): string {
     CSS: '#563d7c',
     Shell: '#89e051',
   };
-  return colors[language] || '#6B7280';
+  return colors[language] || LightTheme.textTertiary;
 }
 
 // Helper function to format dates
@@ -239,161 +268,189 @@ function formatDate(dateString: string): string {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: LightTheme.background,
   },
   centerContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#fff',
+    padding: Spacing.xl,
+    backgroundColor: LightTheme.background,
   },
   header: {
-    padding: 20,
-    paddingTop: 60,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.xxl + Spacing.lg,
+    paddingBottom: Spacing.lg,
+    backgroundColor: LightTheme.background,
   },
-  repoCount: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginTop: 4,
+  title: {
+    ...Typography.displaySmall,
+    color: LightTheme.text,
+    letterSpacing: -0.5,
+  },
+  subtitle: {
+    ...Typography.bodyMedium,
+    color: LightTheme.textTertiary,
+    marginTop: Spacing.xs,
   },
   listContainer: {
-    padding: 16,
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.xl,
   },
   repoCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+    backgroundColor: LightTheme.surface,
+    borderRadius: Radius.lg,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+    ...Shadows.light.sm,
   },
   repoHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
+    marginBottom: Spacing.sm,
   },
-  repoTitleContainer: {
-    flexDirection: 'row',
+  repoIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: Radius.md,
+    backgroundColor: LightTheme.backgroundSecondary,
+    justifyContent: 'center',
     alignItems: 'center',
-    flex: 1,
+    marginRight: Spacing.md,
   },
   repoIcon: {
-    marginRight: 8,
+    fontSize: 18,
+  },
+  repoTitleContainer: {
+    flex: 1,
   },
   repoName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#0366d6',
-    flex: 1,
+    ...Typography.labelLarge,
+    color: LightTheme.text,
+  },
+  repoOwner: {
+    ...Typography.bodySmall,
+    color: LightTheme.textTertiary,
   },
   privateBadge: {
     backgroundColor: '#FEF3C7',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 12,
-    marginLeft: 8,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    borderRadius: Radius.sm,
   },
   privateBadgeText: {
-    fontSize: 10,
-    fontWeight: '600',
+    ...Typography.labelSmall,
     color: '#92400E',
+    fontWeight: '600',
   },
   repoDescription: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginBottom: 12,
+    ...Typography.bodyMedium,
+    color: LightTheme.textSecondary,
+    marginBottom: Spacing.md,
     lineHeight: 20,
   },
   repoMeta: {
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
-    gap: 12,
+    gap: Spacing.md,
+    marginBottom: Spacing.sm,
   },
   metaItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+  },
+  metaIcon: {
+    fontSize: 12,
+    marginRight: 4,
   },
   languageDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 6,
   },
   metaText: {
-    fontSize: 12,
-    color: '#6B7280',
+    ...Typography.bodySmall,
+    color: LightTheme.textSecondary,
+  },
+  updatedText: {
+    ...Typography.labelSmall,
+    color: LightTheme.textTertiary,
   },
   emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 60,
+    paddingVertical: Spacing.xxxl,
+  },
+  emptyIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: LightTheme.backgroundTertiary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: Spacing.lg,
+  },
+  errorIconContainer: {
+    backgroundColor: Accent.error + '15',
   },
   emptyIcon: {
-    marginBottom: 16,
+    fontSize: 36,
   },
   emptyTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 8,
+    ...Typography.h1,
+    color: LightTheme.text,
     textAlign: 'center',
+    marginBottom: Spacing.sm,
   },
   emptyText: {
-    fontSize: 16,
-    color: '#6B7280',
+    ...Typography.bodyLarge,
+    color: LightTheme.textSecondary,
     textAlign: 'center',
-    marginBottom: 24,
-    paddingHorizontal: 40,
+    marginBottom: Spacing.lg,
+    paddingHorizontal: Spacing.xl,
+    lineHeight: 24,
   },
   loginButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#0366d6',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-    gap: 8,
+    backgroundColor: Accent.primary,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
+    borderRadius: Radius.md,
+    ...Shadows.light.md,
   },
   loginButtonText: {
-    color: '#fff',
-    fontSize: 16,
+    ...Typography.labelLarge,
+    color: '#FFFFFF',
     fontWeight: '600',
   },
   loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: '#6B7280',
+    ...Typography.bodyMedium,
+    color: LightTheme.textSecondary,
+    marginTop: Spacing.md,
   },
   errorTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 8,
-    color: '#EF4444',
+    ...Typography.h1,
+    color: Accent.error,
+    textAlign: 'center',
+    marginBottom: Spacing.sm,
   },
   errorText: {
-    fontSize: 16,
-    color: '#6B7280',
+    ...Typography.bodyMedium,
+    color: LightTheme.textSecondary,
     textAlign: 'center',
-    marginBottom: 24,
-    paddingHorizontal: 40,
+    marginBottom: Spacing.lg,
+    paddingHorizontal: Spacing.xl,
   },
   retryButton: {
-    backgroundColor: '#0366d6',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
+    backgroundColor: Accent.primary,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
+    borderRadius: Radius.md,
   },
   retryButtonText: {
-    color: '#fff',
-    fontSize: 16,
+    ...Typography.labelLarge,
+    color: '#FFFFFF',
     fontWeight: '600',
   },
 });

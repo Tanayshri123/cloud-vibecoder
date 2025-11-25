@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -6,23 +6,75 @@ import {
   StyleSheet,
   ScrollView,
   Alert,
+  Animated,
 } from 'react-native';
 import { router } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Accent, LightTheme, DarkTheme, Typography, Spacing, Radius, Shadows } from '../../constants/theme';
+
+interface MenuItem {
+  icon: string;
+  label: string;
+  sublabel?: string;
+  onPress: () => void;
+  danger?: boolean;
+}
 
 export default function ProfileScreen() {
+  const [userName, setUserName] = useState('User');
+  const [userEmail, setUserEmail] = useState('');
+
+  // Animations
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
+
+  useEffect(() => {
+    loadUserInfo();
+    
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 400,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 500,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
+
+  const loadUserInfo = async () => {
+    try {
+      const userJson = await AsyncStorage.getItem('github_user');
+      if (userJson) {
+        const user = JSON.parse(userJson);
+        setUserName(user.name || user.login || 'GitHub User');
+        setUserEmail(user.email || `@${user.login}`);
+      }
+    } catch (err) {
+      console.log('Could not load user info');
+    }
+  };
+
   const handleLogout = () => {
     Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
+      'Sign Out',
+      'Are you sure you want to sign out?',
       [
         {
           text: 'Cancel',
           style: 'cancel',
         },
         {
-          text: 'Logout',
+          text: 'Sign Out',
           style: 'destructive',
-          onPress: () => router.push('/welcome'),
+          onPress: async () => {
+            await AsyncStorage.removeItem('github_access_token');
+            await AsyncStorage.removeItem('github_user');
+            router.push('/welcome');
+          },
         },
       ]
     );
@@ -36,156 +88,286 @@ export default function ProfileScreen() {
     Alert.alert('Settings', 'Settings feature coming soon!');
   };
 
+  const handleHelp = () => {
+    Alert.alert('Help & Support', 'Visit our documentation at docs.cloudvibecoder.com');
+  };
+
+  const menuItems: MenuItem[] = [
+    {
+      icon: '✏️',
+      label: 'Edit Profile',
+      sublabel: 'Update your information',
+      onPress: handleEditProfile,
+    },
+    {
+      icon: '⚙️',
+      label: 'Settings',
+      sublabel: 'App preferences',
+      onPress: handleSettings,
+    },
+    {
+      icon: '📊',
+      label: 'Usage Statistics',
+      sublabel: 'View your activity',
+      onPress: () => Alert.alert('Usage', 'Coming soon!'),
+    },
+    {
+      icon: '❓',
+      label: 'Help & Support',
+      sublabel: 'Get assistance',
+      onPress: handleHelp,
+    },
+  ];
+
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Profile</Text>
-      </View>
-
-      <View style={styles.profileCard}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>U</Text>
+    <ScrollView 
+      style={styles.container}
+      contentContainerStyle={styles.scrollContent}
+      showsVerticalScrollIndicator={false}
+    >
+      <Animated.View
+        style={{
+          opacity: fadeAnim,
+          transform: [{ translateY: slideAnim }],
+        }}
+      >
+        <View style={styles.header}>
+          <Text style={styles.title}>Profile</Text>
         </View>
-        <Text style={styles.userName}>User Name</Text>
-        <Text style={styles.userEmail}>user@example.com</Text>
-      </View>
 
-      <View style={styles.menu}>
-        <TouchableOpacity style={styles.menuItem} onPress={handleEditProfile}>
-          <Text style={styles.menuIcon}>✏️</Text>
-          <Text style={styles.menuText}>Edit Profile</Text>
-          <Text style={styles.menuArrow}>›</Text>
+        {/* Profile Card */}
+        <View style={styles.profileCard}>
+          <View style={styles.avatarContainer}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>
+                {userName.charAt(0).toUpperCase()}
+              </Text>
+            </View>
+            <View style={styles.avatarBadge}>
+              <Text style={styles.avatarBadgeIcon}>⬢</Text>
+            </View>
+          </View>
+          <Text style={styles.userName}>{userName}</Text>
+          <Text style={styles.userEmail}>{userEmail}</Text>
+          
+          <View style={styles.statsRow}>
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>12</Text>
+              <Text style={styles.statLabel}>Projects</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>48</Text>
+              <Text style={styles.statLabel}>PRs Created</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>156</Text>
+              <Text style={styles.statLabel}>AI Tasks</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Menu */}
+        <View style={styles.menuCard}>
+          {menuItems.map((item, index) => (
+            <TouchableOpacity
+              key={index}
+              style={[
+                styles.menuItem,
+                index === menuItems.length - 1 && styles.menuItemLast,
+              ]}
+              onPress={item.onPress}
+              activeOpacity={0.7}
+            >
+              <View style={styles.menuIconContainer}>
+                <Text style={styles.menuIcon}>{item.icon}</Text>
+              </View>
+              <View style={styles.menuContent}>
+                <Text style={styles.menuLabel}>{item.label}</Text>
+                {item.sublabel && (
+                  <Text style={styles.menuSublabel}>{item.sublabel}</Text>
+                )}
+              </View>
+              <Text style={styles.menuChevron}>›</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Logout */}
+        <TouchableOpacity 
+          style={styles.logoutButton} 
+          onPress={handleLogout}
+          activeOpacity={0.9}
+        >
+          <Text style={styles.logoutButtonText}>Sign Out</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.menuItem} onPress={handleSettings}>
-          <Text style={styles.menuIcon}>⚙️</Text>
-          <Text style={styles.menuText}>Settings</Text>
-          <Text style={styles.menuArrow}>›</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.menuItem}>
-          <Text style={styles.menuIcon}>📊</Text>
-          <Text style={styles.menuText}>Usage Statistics</Text>
-          <Text style={styles.menuArrow}>›</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.menuItem}>
-          <Text style={styles.menuIcon}>❓</Text>
-          <Text style={styles.menuText}>Help & Support</Text>
-          <Text style={styles.menuArrow}>›</Text>
-        </TouchableOpacity>
-      </View>
-
-      <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-        <Text style={styles.logoutButtonText}>Logout</Text>
-      </TouchableOpacity>
+        {/* App Version */}
+        <Text style={styles.versionText}>Cloud Vibecoder v1.0.0</Text>
+      </Animated.View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flexGrow: 1,
-    backgroundColor: '#f8f9fa',
+    flex: 1,
+    backgroundColor: LightTheme.background,
+  },
+  scrollContent: {
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.xxl + Spacing.lg,
+    paddingBottom: Spacing.xxl,
   },
   header: {
-    paddingTop: 20,
-    paddingBottom: 20,
-    paddingHorizontal: 20,
+    marginBottom: Spacing.lg,
   },
   title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
+    ...Typography.displaySmall,
+    color: LightTheme.text,
+    letterSpacing: -0.5,
   },
   profileCard: {
-    backgroundColor: 'white',
-    marginHorizontal: 20,
-    marginBottom: 24,
-    padding: 24,
-    borderRadius: 16,
+    backgroundColor: LightTheme.surface,
+    borderRadius: Radius.xl,
+    padding: Spacing.xl,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    marginBottom: Spacing.lg,
+    ...Shadows.light.md,
+  },
+  avatarContainer: {
+    position: 'relative',
+    marginBottom: Spacing.md,
   },
   avatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#007AFF',
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: Accent.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
   },
   avatarText: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: 'white',
+    fontSize: 36,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  avatarBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: DarkTheme.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: LightTheme.surface,
+  },
+  avatarBadgeIcon: {
+    fontSize: 14,
+    color: '#FFFFFF',
   },
   userName: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#1a1a1a',
-    marginBottom: 4,
+    ...Typography.h1,
+    color: LightTheme.text,
+    marginBottom: Spacing.xs,
   },
   userEmail: {
-    fontSize: 16,
-    color: '#666',
+    ...Typography.bodyMedium,
+    color: LightTheme.textSecondary,
+    marginBottom: Spacing.lg,
   },
-  menu: {
-    backgroundColor: 'white',
-    marginHorizontal: 20,
-    marginBottom: 24,
-    borderRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+  statsRow: {
+    flexDirection: 'row',
+    width: '100%',
+    backgroundColor: LightTheme.backgroundSecondary,
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+  },
+  statItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  statValue: {
+    ...Typography.h2,
+    color: LightTheme.text,
+    fontWeight: '700',
+  },
+  statLabel: {
+    ...Typography.labelSmall,
+    color: LightTheme.textTertiary,
+    marginTop: 2,
+  },
+  statDivider: {
+    width: 1,
+    backgroundColor: LightTheme.border,
+    marginHorizontal: Spacing.sm,
+  },
+  menuCard: {
+    backgroundColor: LightTheme.surface,
+    borderRadius: Radius.lg,
+    marginBottom: Spacing.lg,
+    ...Shadows.light.sm,
+    overflow: 'hidden',
   },
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    padding: Spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: LightTheme.borderLight,
+  },
+  menuItemLast: {
+    borderBottomWidth: 0,
+  },
+  menuIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: Radius.md,
+    backgroundColor: LightTheme.backgroundSecondary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: Spacing.md,
   },
   menuIcon: {
-    fontSize: 20,
-    marginRight: 16,
-    width: 24,
+    fontSize: 18,
   },
-  menuText: {
+  menuContent: {
     flex: 1,
-    fontSize: 16,
-    color: '#1a1a1a',
   },
-  menuArrow: {
-    fontSize: 20,
-    color: '#ccc',
+  menuLabel: {
+    ...Typography.labelLarge,
+    color: LightTheme.text,
+  },
+  menuSublabel: {
+    ...Typography.bodySmall,
+    color: LightTheme.textTertiary,
+    marginTop: 2,
+  },
+  menuChevron: {
+    fontSize: 22,
+    color: LightTheme.textTertiary,
+    fontWeight: '300',
   },
   logoutButton: {
-    backgroundColor: '#ff3b30',
-    marginHorizontal: 20,
-    marginBottom: 40,
-    paddingVertical: 16,
-    borderRadius: 12,
+    backgroundColor: Accent.error,
+    borderRadius: Radius.md,
+    paddingVertical: Spacing.md,
     alignItems: 'center',
+    marginBottom: Spacing.lg,
+    ...Shadows.light.sm,
   },
   logoutButtonText: {
-    color: 'white',
-    fontSize: 16,
+    ...Typography.labelLarge,
+    color: '#FFFFFF',
     fontWeight: '600',
   },
+  versionText: {
+    ...Typography.labelSmall,
+    color: LightTheme.textTertiary,
+    textAlign: 'center',
+  },
 });
-

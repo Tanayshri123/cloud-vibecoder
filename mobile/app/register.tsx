@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,8 +8,12 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
+  Animated,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { router } from 'expo-router';
+import { Accent, LightTheme, Typography, Spacing, Radius, Shadows } from '../constants/theme';
 
 export default function RegisterScreen() {
   const [formData, setFormData] = useState({
@@ -19,6 +23,25 @@ export default function RegisterScreen() {
     confirmPassword: '',
   });
   const [loading, setLoading] = useState(false);
+
+  // Animations
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(30)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 700,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -49,7 +72,6 @@ export default function RegisterScreen() {
 
     setLoading(true);
     try {
-      // Simulate API call - replace with actual registration logic
       await new Promise(resolve => setTimeout(resolve, 1500));
       
       Alert.alert(
@@ -70,148 +92,209 @@ export default function RegisterScreen() {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Create Account</Text>
-        <Text style={styles.subtitle}>Join Cloud Vibecoder today</Text>
-      </View>
-
-      <View style={styles.form}>
-        <TextInput
-          placeholder="Full Name"
-          value={formData.name}
-          onChangeText={(value) => handleInputChange('name', value)}
-          style={styles.input}
-          autoCapitalize="words"
-        />
-
-        <TextInput
-          placeholder="Email Address"
-          value={formData.email}
-          onChangeText={(value) => handleInputChange('email', value)}
-          style={styles.input}
-          keyboardType="email-address"
-          autoCapitalize="none"
-        />
-
-        <TextInput
-          placeholder="Password"
-          value={formData.password}
-          onChangeText={(value) => handleInputChange('password', value)}
-          style={styles.input}
-          secureTextEntry
-        />
-
-        <TextInput
-          placeholder="Confirm Password"
-          value={formData.confirmPassword}
-          onChangeText={(value) => handleInputChange('confirmPassword', value)}
-          style={styles.input}
-          secureTextEntry
-        />
-
-        <TouchableOpacity
-          style={[styles.button, loading && styles.buttonDisabled]}
-          onPress={handleRegister}
-          disabled={loading}
+    <KeyboardAvoidingView 
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        <TouchableOpacity 
+          style={styles.backButton}
+          onPress={() => router.back()}
         >
-          {loading ? (
-            <ActivityIndicator color="white" />
-          ) : (
-            <Text style={styles.buttonText}>Create Account</Text>
-          )}
+          <Text style={styles.backIcon}>←</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.loginLink}
-          onPress={() => router.push('/login')}
+        <Animated.View 
+          style={[
+            styles.header,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
+            }
+          ]}
         >
-          <Text style={styles.loginText}>
-            Already have an account? <Text style={styles.loginLinkText}>Sign In</Text>
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
+          <Text style={styles.title}>Create</Text>
+          <Text style={styles.titleAccent}>account</Text>
+        </Animated.View>
+
+        <Animated.View 
+          style={[
+            styles.form,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
+            }
+          ]}
+        >
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>Full Name</Text>
+            <TextInput
+              placeholder="Enter your full name"
+              placeholderTextColor={LightTheme.textTertiary}
+              value={formData.name}
+              onChangeText={(value) => handleInputChange('name', value)}
+              style={styles.input}
+              autoCapitalize="words"
+            />
+          </View>
+
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>Email</Text>
+            <TextInput
+              placeholder="Enter your email"
+              placeholderTextColor={LightTheme.textTertiary}
+              value={formData.email}
+              onChangeText={(value) => handleInputChange('email', value)}
+              style={styles.input}
+              keyboardType="email-address"
+              autoCapitalize="none"
+            />
+          </View>
+
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>Password</Text>
+            <TextInput
+              placeholder="Create a password"
+              placeholderTextColor={LightTheme.textTertiary}
+              value={formData.password}
+              onChangeText={(value) => handleInputChange('password', value)}
+              style={styles.input}
+              secureTextEntry
+            />
+          </View>
+
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>Confirm Password</Text>
+            <TextInput
+              placeholder="Confirm your password"
+              placeholderTextColor={LightTheme.textTertiary}
+              value={formData.confirmPassword}
+              onChangeText={(value) => handleInputChange('confirmPassword', value)}
+              style={styles.input}
+              secureTextEntry
+            />
+          </View>
+
+          <TouchableOpacity
+            style={[styles.primaryButton, loading && styles.buttonDisabled]}
+            onPress={handleRegister}
+            disabled={loading}
+            activeOpacity={0.9}
+          >
+            {loading ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Text style={styles.primaryButtonText}>Create Account</Text>
+            )}
+          </TouchableOpacity>
+
+          <View style={styles.loginContainer}>
+            <Text style={styles.loginText}>Already have an account? </Text>
+            <TouchableOpacity onPress={() => router.push('/login')}>
+              <Text style={styles.loginLink}>Sign In</Text>
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
+    backgroundColor: LightTheme.background,
+  },
+  scrollContent: {
     flexGrow: 1,
-    backgroundColor: '#f8f9fa',
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.xxl,
+    paddingBottom: Spacing.xl,
   },
-  header: {
+  backButton: {
+    width: 44,
+    height: 44,
+    borderRadius: Radius.md,
+    backgroundColor: LightTheme.backgroundSecondary,
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingTop: 60,
-    paddingBottom: 40,
-    paddingHorizontal: 20,
+    marginBottom: Spacing.xl,
   },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
-  },
-  form: {
-    paddingHorizontal: 20,
-  },
-  input: {
-    backgroundColor: 'white',
-    borderWidth: 1,
-    borderColor: '#e1e5e9',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  button: {
-    backgroundColor: '#007AFF',
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-    marginTop: 8,
-    shadowColor: '#007AFF',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  buttonDisabled: {
-    backgroundColor: '#ccc',
-  },
-  buttonText: {
-    color: 'white',
-    fontSize: 18,
+  backIcon: {
+    fontSize: 20,
+    color: LightTheme.text,
     fontWeight: '600',
   },
-  loginLink: {
+  header: {
+    marginBottom: Spacing.xl,
+  },
+  title: {
+    ...Typography.displayMedium,
+    color: LightTheme.text,
+    letterSpacing: -0.5,
+  },
+  titleAccent: {
+    ...Typography.displayMedium,
+    color: Accent.primary,
+    letterSpacing: -0.5,
+    marginTop: -4,
+  },
+  form: {
+    flex: 1,
+  },
+  inputContainer: {
+    marginBottom: Spacing.md,
+  },
+  inputLabel: {
+    ...Typography.labelMedium,
+    color: LightTheme.textSecondary,
+    marginBottom: Spacing.sm,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  input: {
+    backgroundColor: LightTheme.backgroundSecondary,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md + 2,
+    ...Typography.bodyLarge,
+    color: LightTheme.text,
+    borderWidth: 1,
+    borderColor: LightTheme.borderLight,
+  },
+  primaryButton: {
+    backgroundColor: Accent.primary,
+    borderRadius: Radius.md,
+    paddingVertical: Spacing.md + 2,
     alignItems: 'center',
-    marginTop: 24,
+    marginTop: Spacing.md,
+    ...Shadows.light.md,
+  },
+  buttonDisabled: {
+    opacity: 0.6,
+  },
+  primaryButtonText: {
+    ...Typography.labelLarge,
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  loginContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: Spacing.xl,
   },
   loginText: {
-    fontSize: 16,
-    color: '#666',
+    ...Typography.bodyMedium,
+    color: LightTheme.textSecondary,
   },
-  loginLinkText: {
-    color: '#007AFF',
+  loginLink: {
+    ...Typography.bodyMedium,
+    color: Accent.primary,
     fontWeight: '600',
   },
 });
-

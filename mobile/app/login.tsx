@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,10 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
+  Animated,
+  Dimensions,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { router } from 'expo-router';
 import {
@@ -17,12 +21,29 @@ import {
   ResponseType,
 } from 'expo-auth-session';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Accent, LightTheme, Typography, Spacing, Radius, Shadows } from '../constants/theme';
 
+const { height } = Dimensions.get('window');
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://cloud-vibecoder-1.onrender.com';
 const GITHUB_CLIENT_ID = process.env.EXPO_PUBLIC_GITHUB_CLIENT_ID;
 const GITHUB_SCOPES = ['read:user', 'user:email', 'repo'];
 const GITHUB_DISCOVERY = {
   authorizationEndpoint: 'https://github.com/login/oauth/authorize',
+};
+
+// Get greeting based on time of day
+const getGreeting = (): { line1: string; line2: string } => {
+  const hour = new Date().getHours();
+  
+  if (hour >= 5 && hour < 12) {
+    return { line1: 'Good', line2: 'morning' };
+  } else if (hour >= 12 && hour < 17) {
+    return { line1: 'Good', line2: 'afternoon' };
+  } else if (hour >= 17 && hour < 21) {
+    return { line1: 'Good', line2: 'evening' };
+  } else {
+    return { line1: 'Good', line2: 'night' };
+  }
 };
 
 export default function LoginScreen() {
@@ -32,25 +53,45 @@ export default function LoginScreen() {
   });
   const [loading, setLoading] = useState(false);
   const [githubLoading, setGithubLoading] = useState(false);
+  const [greeting, setGreeting] = useState(getGreeting());
+  
+  // Animations
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(30)).current;
 
-// Build a redirect URI that works across web, Expo Go, and native builds.
-// Note: Route groups like (auth) don't appear in the actual URL path
-// So app/(auth)/oauth-redirect.tsx is accessible at /oauth-redirect
-const redirectUri = useMemo(
-  () => {
-    const uri = makeRedirectUri({
-      scheme: 'exp',
-      path: 'oauth-redirect'  // Without (auth) since it's just a route group
-    });
-    console.log('[DEBUG] Generated Redirect URI:', uri);
-    return uri;
-  },
-  []
-);
+  useEffect(() => {
+    // Update greeting on mount
+    setGreeting(getGreeting());
+    
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 700,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
 
-const handleInputChange = (field: string, value: string) => {
-  setFormData(prev => ({ ...prev, [field]: value }));
-};
+  const redirectUri = useMemo(
+    () => {
+      const uri = makeRedirectUri({
+        scheme: 'exp',
+        path: 'oauth-redirect'
+      });
+      console.log('[DEBUG] Generated Redirect URI:', uri);
+      return uri;
+    },
+    []
+  );
+
+  const handleInputChange = (field: string, value: string) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
 
   const handleLogin = async () => {
     if (!formData.email.trim() || !formData.password.trim()) {
@@ -60,7 +101,6 @@ const handleInputChange = (field: string, value: string) => {
 
     setLoading(true);
     try {
-      // Simulate API call - replace with actual login logic
       await new Promise(resolve => setTimeout(resolve, 1000));
       
       Alert.alert(
@@ -80,255 +120,341 @@ const handleInputChange = (field: string, value: string) => {
     }
   };
 
+  const handleGithubLogin = async () => {
+    if (!GITHUB_CLIENT_ID) {
+      Alert.alert('GitHub Login', 'GitHub OAuth is not configured. Please set EXPO_PUBLIC_GITHUB_CLIENT_ID.');
+      console.warn('[GitHub OAuth] Missing EXPO_PUBLIC_GITHUB_CLIENT_ID');
+      return;
+    }
+
+    setGithubLoading(true);
+    try {
+      console.log('[GitHub OAuth] Starting login', {
+        redirectUri,
+        clientId: GITHUB_CLIENT_ID,
+        scopes: GITHUB_SCOPES,
+      });
+
+      const request = new AuthRequest({
+        clientId: GITHUB_CLIENT_ID,
+        scopes: GITHUB_SCOPES,
+        redirectUri,
+        responseType: ResponseType.Code,
+        extraParams: {
+          allow_signup: 'true',
+        },
+        usePKCE: false,
+      });
+      
+      const url = await request.makeAuthUrlAsync(GITHUB_DISCOVERY);
+      console.log('[GitHub OAuth] Auth URL:', url);
+
+      const result = await request.promptAsync(GITHUB_DISCOVERY);
+      console.log('[GitHub OAuth] AuthSession result', result);
+
+      if (result.type === 'error') {
+        const errorDescription = (result as AuthSessionResult & { params?: { error_description?: string } })?.params?.error_description;
+        throw new Error(errorDescription || 'GitHub returned an error during authentication');
+      }
+
+      if (result.type !== 'success' || !result.params?.code) {
+        if (result.type !== 'dismiss') {
+          Alert.alert('GitHub Login', 'GitHub login was cancelled.');
+        }
+        return;
+      }
+
+      const exchangeResponse = await fetch(`${API_BASE_URL}/api/auth/github/exchange`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: result.params.code,
+          redirect_uri: redirectUri,
+        }),
+      });
+
+      console.log('[GitHub OAuth] Exchange response status', {
+        status: exchangeResponse.status,
+        url: exchangeResponse.url,
+      });
+
+      if (!exchangeResponse.ok) {
+        const errorPayload = await exchangeResponse.json().catch(() => ({}));
+        console.error('[GitHub OAuth] Exchange failure payload', errorPayload);
+        throw new Error(errorPayload?.detail || 'GitHub exchange failed');
+      }
+
+      const payload = await exchangeResponse.json();
+      console.log('[GitHub OAuth] Exchange success payload', payload);
+      const userName = payload?.user?.name || payload?.user?.login || 'GitHub user';
+
+      await AsyncStorage.setItem('github_access_token', payload.access_token);
+      await AsyncStorage.setItem('github_user', JSON.stringify(payload.user));
+      console.log('[GitHub OAuth] Token and user data stored');
+
+      Alert.alert('Success', `Signed in as ${userName}`, [
+        {
+          text: 'Continue',
+          onPress: () => router.push('/(tabs)'),
+        },
+      ]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unexpected error during GitHub login';
+      console.error('[GitHub OAuth] Login error', error);
+      Alert.alert('GitHub Login Failed', message);
+    } finally {
+      setGithubLoading(false);
+    }
+  };
+
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Welcome Back</Text>
-        <Text style={styles.subtitle}>Sign in to your account</Text>
-      </View>
-
-      <View style={styles.form}>
-        <TextInput
-          placeholder="Email Address"
-          value={formData.email}
-          onChangeText={(value) => handleInputChange('email', value)}
-          style={styles.input}
-          keyboardType="email-address"
-          autoCapitalize="none"
-        />
-
-        <TextInput
-          placeholder="Password"
-          value={formData.password}
-          onChangeText={(value) => handleInputChange('password', value)}
-          style={styles.input}
-          secureTextEntry
-        />
-
-        <TouchableOpacity
-          style={[styles.button, loading && styles.buttonDisabled]}
-          onPress={handleLogin}
-          disabled={loading}
+    <KeyboardAvoidingView 
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        <TouchableOpacity 
+          style={styles.backButton}
+          onPress={() => router.back()}
         >
-          {loading ? (
-            <ActivityIndicator color="white" />
-          ) : (
-            <Text style={styles.buttonText}>Sign In</Text>
-          )}
+          <Text style={styles.backIcon}>←</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.githubButton, githubLoading && styles.buttonDisabled]}
-          onPress={async () => {
-            if (!GITHUB_CLIENT_ID) {
-              Alert.alert('GitHub Login', 'GitHub OAuth is not configured. Please set EXPO_PUBLIC_GITHUB_CLIENT_ID.');
-              console.warn('[GitHub OAuth] Missing EXPO_PUBLIC_GITHUB_CLIENT_ID');
-              return;
+        <Animated.View 
+          style={[
+            styles.header,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
             }
+          ]}
+        >
+          <Text style={styles.greeting}>{greeting.line1}</Text>
+          <Text style={styles.greetingAccent}>{greeting.line2}</Text>
+        </Animated.View>
 
-            setGithubLoading(true);
-            try {
-              console.log('[GitHub OAuth] Starting login', {
-                redirectUri,
-                clientId: GITHUB_CLIENT_ID,
-                scopes: GITHUB_SCOPES,
-              });
-
-              const request = new AuthRequest({
-                clientId: GITHUB_CLIENT_ID,
-                scopes: GITHUB_SCOPES,
-                redirectUri,
-                responseType: ResponseType.Code,
-                extraParams: {
-                  allow_signup: 'true',
-                },
-                usePKCE: false,
-              });
-              
-              // Log the full request URL for debugging
-              const url = await request.makeAuthUrlAsync(GITHUB_DISCOVERY);
-              console.log('[GitHub OAuth] Auth URL:', url);
-
-              const result = await request.promptAsync(GITHUB_DISCOVERY);
-              console.log('[GitHub OAuth] AuthSession result', result);
-
-              if (result.type === 'error') {
-                const errorDescription = (result as AuthSessionResult & { params?: { error_description?: string } })?.params?.error_description;
-                throw new Error(errorDescription || 'GitHub returned an error during authentication');
-              }
-
-              if (result.type !== 'success' || !result.params?.code) {
-                if (result.type !== 'dismiss') {
-                  Alert.alert('GitHub Login', 'GitHub login was cancelled.');
-                }
-                return;
-              }
-
-              const exchangeResponse = await fetch(`${API_BASE_URL}/api/auth/github/exchange`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  code: result.params.code,
-                  redirect_uri: redirectUri,
-                }),
-              });
-
-              console.log('[GitHub OAuth] Exchange response status', {
-                status: exchangeResponse.status,
-                url: exchangeResponse.url,
-              });
-
-              if (!exchangeResponse.ok) {
-                const errorPayload = await exchangeResponse.json().catch(() => ({}));
-                console.error('[GitHub OAuth] Exchange failure payload', errorPayload);
-                throw new Error(errorPayload?.detail || 'GitHub exchange failed');
-              }
-
-              const payload = await exchangeResponse.json();
-              console.log('[GitHub OAuth] Exchange success payload', payload);
-              const userName = payload?.user?.name || payload?.user?.login || 'GitHub user';
-
-              // Store the access token and user info
-              await AsyncStorage.setItem('github_access_token', payload.access_token);
-              await AsyncStorage.setItem('github_user', JSON.stringify(payload.user));
-              console.log('[GitHub OAuth] Token and user data stored');
-
-              Alert.alert('Success', `Signed in as ${userName}`, [
-                {
-                  text: 'Continue',
-                  onPress: () => router.push('/(tabs)'),
-                },
-              ]);
-            } catch (error) {
-              const message = error instanceof Error ? error.message : 'Unexpected error during GitHub login';
-              console.error('[GitHub OAuth] Login error', error);
-              Alert.alert('GitHub Login Failed', message);
-            } finally {
-              setGithubLoading(false);
+        <Animated.View 
+          style={[
+            styles.form,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
             }
-          }}
-          disabled={githubLoading}
+          ]}
         >
-          {githubLoading ? (
-            <ActivityIndicator color="white" />
-          ) : (
-            <Text style={styles.githubButtonText}>Login with GitHub</Text>
-          )}
-        </TouchableOpacity>
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>Email</Text>
+            <TextInput
+              placeholder="Enter your email"
+              placeholderTextColor={LightTheme.textTertiary}
+              value={formData.email}
+              onChangeText={(value) => handleInputChange('email', value)}
+              style={styles.input}
+              keyboardType="email-address"
+              autoCapitalize="none"
+            />
+          </View>
 
-        <TouchableOpacity style={styles.forgotPassword}>
-          <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
-        </TouchableOpacity>
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>Password</Text>
+            <TextInput
+              placeholder="Enter your password"
+              placeholderTextColor={LightTheme.textTertiary}
+              value={formData.password}
+              onChangeText={(value) => handleInputChange('password', value)}
+              style={styles.input}
+              secureTextEntry
+            />
+          </View>
 
-        <TouchableOpacity
-          style={styles.registerLink}
-          onPress={() => router.push('/register')}
-        >
-          <Text style={styles.registerText}>
-            Don't have an account? <Text style={styles.registerLinkText}>Sign Up</Text>
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
+          <TouchableOpacity style={styles.forgotPassword}>
+            <Text style={styles.forgotPasswordText}>Forgot password?</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.primaryButton, loading && styles.buttonDisabled]}
+            onPress={handleLogin}
+            disabled={loading}
+            activeOpacity={0.9}
+          >
+            {loading ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Text style={styles.primaryButtonText}>Sign In</Text>
+            )}
+          </TouchableOpacity>
+
+          <View style={styles.divider}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or continue with</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          <TouchableOpacity
+            style={[styles.githubButton, githubLoading && styles.buttonDisabled]}
+            onPress={handleGithubLogin}
+            disabled={githubLoading}
+            activeOpacity={0.9}
+          >
+            {githubLoading ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <>
+                <Text style={styles.githubIcon}>⬢</Text>
+                <Text style={styles.githubButtonText}>GitHub</Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          <View style={styles.signupContainer}>
+            <Text style={styles.signupText}>Don't have an account? </Text>
+            <TouchableOpacity onPress={() => router.push('/register')}>
+              <Text style={styles.signupLink}>Sign Up</Text>
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
+    backgroundColor: LightTheme.background,
+  },
+  scrollContent: {
     flexGrow: 1,
-    backgroundColor: '#f8f9fa',
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.xxl,
+    paddingBottom: Spacing.xl,
+  },
+  backButton: {
+    width: 44,
+    height: 44,
+    borderRadius: Radius.md,
+    backgroundColor: LightTheme.backgroundSecondary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: Spacing.xl,
+  },
+  backIcon: {
+    fontSize: 20,
+    color: LightTheme.text,
+    fontWeight: '600',
   },
   header: {
-    alignItems: 'center',
-    paddingTop: 80,
-    paddingBottom: 40,
-    paddingHorizontal: 20,
+    marginBottom: Spacing.xxl,
   },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
-    marginBottom: 8,
+  greeting: {
+    ...Typography.displayMedium,
+    color: LightTheme.text,
+    letterSpacing: -0.5,
   },
-  subtitle: {
-    fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
+  greetingAccent: {
+    ...Typography.displayMedium,
+    color: Accent.primary,
+    letterSpacing: -0.5,
+    marginTop: -4,
   },
   form: {
-    paddingHorizontal: 20,
+    flex: 1,
+  },
+  inputContainer: {
+    marginBottom: Spacing.lg,
+  },
+  inputLabel: {
+    ...Typography.labelMedium,
+    color: LightTheme.textSecondary,
+    marginBottom: Spacing.sm,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   input: {
-    backgroundColor: 'white',
+    backgroundColor: LightTheme.backgroundSecondary,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md + 2,
+    ...Typography.bodyLarge,
+    color: LightTheme.text,
     borderWidth: 1,
-    borderColor: '#e1e5e9',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  button: {
-    backgroundColor: '#007AFF',
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-    marginTop: 8,
-    shadowColor: '#007AFF',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  buttonDisabled: {
-    backgroundColor: '#ccc',
-  },
-  buttonText: {
-    color: 'white',
-    fontSize: 18,
-    fontWeight: '600',
+    borderColor: LightTheme.borderLight,
   },
   forgotPassword: {
-    alignItems: 'center',
-    marginTop: 16,
+    alignSelf: 'flex-end',
+    marginBottom: Spacing.lg,
   },
   forgotPasswordText: {
-    color: '#007AFF',
-    fontSize: 16,
+    ...Typography.bodyMedium,
+    color: Accent.primary,
+    fontWeight: '500',
   },
-  registerLink: {
+  primaryButton: {
+    backgroundColor: Accent.primary,
+    borderRadius: Radius.md,
+    paddingVertical: Spacing.md + 2,
     alignItems: 'center',
-    marginTop: 32,
+    ...Shadows.light.md,
   },
-  registerText: {
-    fontSize: 16,
-    color: '#666',
+  buttonDisabled: {
+    opacity: 0.6,
   },
-  registerLinkText: {
-    color: '#007AFF',
+  primaryButtonText: {
+    ...Typography.labelLarge,
+    color: '#FFFFFF',
     fontWeight: '600',
   },
-  githubButton: {
-    backgroundColor: '#24292e',
-    borderRadius: 12,
-    paddingVertical: 14,
+  divider: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 12,
+    marginVertical: Spacing.lg,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: LightTheme.border,
+  },
+  dividerText: {
+    ...Typography.bodySmall,
+    color: LightTheme.textTertiary,
+    marginHorizontal: Spacing.md,
+  },
+  githubButton: {
+    backgroundColor: '#24292F',
+    borderRadius: Radius.md,
+    paddingVertical: Spacing.md + 2,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    ...Shadows.light.sm,
+  },
+  githubIcon: {
+    fontSize: 18,
+    color: '#FFFFFF',
+    marginRight: Spacing.sm,
   },
   githubButtonText: {
-    color: 'white',
-    fontSize: 16,
+    ...Typography.labelLarge,
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  signupContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: Spacing.xl,
+  },
+  signupText: {
+    ...Typography.bodyMedium,
+    color: LightTheme.textSecondary,
+  },
+  signupLink: {
+    ...Typography.bodyMedium,
+    color: Accent.primary,
     fontWeight: '600',
   },
 });
