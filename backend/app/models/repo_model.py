@@ -50,3 +50,52 @@ class RepoPushResult(BaseModel):
     branch_name: str = Field(description="Branch that was pushed")
     remote_url: str = Field(description="Remote URL pushed to")
     error_message: Optional[str] = Field(default=None, description="Error message if failed")
+
+
+class RepoCreateRequest(BaseModel):
+    """Request to create a new GitHub repository"""
+    name: str = Field(
+        description="Repository name (e.g., 'my-awesome-project')",
+        min_length=1,
+        max_length=100
+    )
+    description: Optional[str] = Field(
+        default=None,
+        description="Repository description",
+        max_length=350
+    )
+    private: bool = Field(
+        default=False,
+        description="Whether the repository is private"
+    )
+    auto_init: bool = Field(
+        default=True,
+        description="Initialize with README.md"
+    )
+    gitignore_template: Optional[str] = Field(
+        default=None,
+        description="Gitignore template name (e.g., 'Python', 'Node')"
+    )
+    license_template: Optional[str] = Field(
+        default=None,
+        description="License template key (e.g., 'mit', 'apache-2.0')"
+    )
+    github_token: str = Field(
+        description="GitHub personal access token with repo scope"
+    )
+
+
+class RepoCreateResponse(BaseModel):
+    """Response after creating a repository"""
+    success: bool = Field(description="Whether creation was successful")
+    repo_url: str = Field(description="Repository URL (same as html_url)")
+    full_name: str = Field(description="Full repository name (owner/repo)")
+    html_url: str = Field(description="Web URL for the repository")
+    clone_url: str = Field(description="HTTPS clone URL")
+    ssh_url: str = Field(description="SSH clone URL")
+    default_branch: str = Field(description="Default branch name")
+    owner: str = Field(description="Repository owner username")
+    error_message: Optional[str] = Field(
+        default=None,
+        description="Error message if creation failed"
+    )

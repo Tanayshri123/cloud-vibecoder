@@ -3,6 +3,8 @@ import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Activi
 import { router } from 'expo-router';
 import githubService, { type GitHubRepo } from '../../services/githubService';
 import { Accent, LightTheme, Typography, Spacing, Radius, Shadows } from '../../constants/theme';
+import RepoModeSelector, { type RepoMode } from '../../components/RepoModeSelector';
+import NewRepoForm, { type NewRepoConfig } from '../../components/NewRepoForm';
 
 const { width } = Dimensions.get('window');
 
@@ -89,7 +91,73 @@ interface FileTreeItem {
   sha?: string;
 }
 
+// Detect project type from user prompt for new repos
+const detectProjectType = (prompt: string): string | undefined => {
+  const lowerPrompt = prompt.toLowerCase();
+  
+  if (lowerPrompt.includes('react native') || lowerPrompt.includes('expo')) {
+    return 'react-native';
+  }
+  if (lowerPrompt.includes('next.js') || lowerPrompt.includes('nextjs')) {
+    return 'nextjs';
+  }
+  if (lowerPrompt.includes('react')) {
+    return 'react';
+  }
+  if (lowerPrompt.includes('fastapi') || lowerPrompt.includes('fast api')) {
+    return 'fastapi';
+  }
+  if (lowerPrompt.includes('django')) {
+    return 'django';
+  }
+  if (lowerPrompt.includes('flask')) {
+    return 'flask';
+  }
+  if (lowerPrompt.includes('python')) {
+    return 'python';
+  }
+  if (lowerPrompt.includes('express') || lowerPrompt.includes('node.js') || lowerPrompt.includes('nodejs')) {
+    return 'node';
+  }
+  if (lowerPrompt.includes('typescript') || lowerPrompt.includes('ts')) {
+    return 'typescript';
+  }
+  if (lowerPrompt.includes('vue')) {
+    return 'vue';
+  }
+  if (lowerPrompt.includes('svelte')) {
+    return 'svelte';
+  }
+  if (lowerPrompt.includes('rust')) {
+    return 'rust';
+  }
+  if (lowerPrompt.includes('go ') || lowerPrompt.includes('golang')) {
+    return 'go';
+  }
+  
+  // Default: try to infer from common patterns
+  if (lowerPrompt.includes('api') || lowerPrompt.includes('backend') || lowerPrompt.includes('server')) {
+    return 'node'; // Default backend to node
+  }
+  if (lowerPrompt.includes('web') || lowerPrompt.includes('frontend') || lowerPrompt.includes('website')) {
+    return 'react'; // Default frontend to react
+  }
+  
+  return undefined;
+};
+
 export default function IndexScreen() {
+  // Repository mode state
+  const [repoMode, setRepoMode] = useState<RepoMode>('existing');
+  const [newRepoConfig, setNewRepoConfig] = useState<NewRepoConfig>({
+    name: '',
+    description: '',
+    private: false,
+    gitignoreTemplate: null,
+    licenseTemplate: null,
+  });
+  
+  // Existing repo state
   const [repo, setRepo] = useState('');
   const [selectedRepo, setSelectedRepo] = useState<GitHubRepo | null>(null);
   const [repos, setRepos] = useState<GitHubRepo[]>([]);
@@ -225,7 +293,9 @@ export default function IndexScreen() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           prompt: prompt.trim(),
-          repo_url: repo.trim() || undefined
+          repo_url: repoMode === 'existing' ? repo.trim() || undefined : undefined,
+          is_new_repo: repoMode === 'new',
+          project_type: repoMode === 'new' ? detectProjectType(prompt) : undefined
         }),
       });
       
@@ -271,9 +341,11 @@ export default function IndexScreen() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           prompt: prompt.trim(),
-          repo_url: repo.trim() || undefined,
+          repo_url: repoMode === 'existing' ? repo.trim() || undefined : undefined,
           answers,
-          max_questions: 0
+          max_questions: 0,
+          is_new_repo: repoMode === 'new',
+          project_type: repoMode === 'new' ? detectProjectType(prompt) : undefined
         }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
@@ -299,8 +371,10 @@ export default function IndexScreen() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           crs: crs,
-          repo_url: repo.trim() || undefined,
-          scope_preferences: ['minimal changes', 'frontend only']
+          repo_url: repoMode === 'existing' ? repo.trim() || undefined : undefined,
+          scope_preferences: repoMode === 'new' ? ['new project', 'create files'] : ['minimal changes', 'frontend only'],
+          is_new_repo: repoMode === 'new',
+          project_type: repoMode === 'new' ? detectProjectType(prompt) : undefined
         }),
       });
       
@@ -331,13 +405,24 @@ export default function IndexScreen() {
   };
 
   const handleAcceptPlan = async () => {
-    if (!plan || !selectedRepo) {
-      Alert.alert('Error', 'No plan or repository selected');
+    // Validate based on mode
+    if (repoMode === 'existing' && !selectedRepo) {
+      Alert.alert('Error', 'Please select a repository');
+      return;
+    }
+    
+    if (repoMode === 'new' && !newRepoConfig.name.trim()) {
+      Alert.alert('Error', 'Please enter a repository name');
+      return;
+    }
+    
+    if (!plan) {
+      Alert.alert('Error', 'No implementation plan available');
       return;
     }
 
     if (!isAuthed) {
-      Alert.alert('Error', 'Please sign in with GitHub to create a pull request');
+      Alert.alert('Error', 'Please sign in with GitHub to continue');
       return;
     }
 
@@ -351,24 +436,45 @@ export default function IndexScreen() {
     setJobProgress({ status: 'starting', message: 'Initializing...', percentage: 0 });
 
     try {
-      const [owner, repoName] = selectedRepo.full_name.split('/');
       const branchName = `vibecoder-${Date.now()}`;
 
       console.log('Creating coding job...');
-      setJobProgress({ status: 'creating_job', message: 'Creating coding job...', percentage: 10 });
+      setJobProgress({ 
+        status: 'creating_job', 
+        message: repoMode === 'new' ? 'Creating repository and coding job...' : 'Creating coding job...', 
+        percentage: 10 
+      });
+      
+      // Build job payload based on mode
+      const jobPayload = repoMode === 'new' 
+        ? {
+            create_new_repo: true,
+            new_repo_config: {
+              name: newRepoConfig.name.trim(),
+              description: newRepoConfig.description.trim() || null,
+              private: newRepoConfig.private,
+              gitignore_template: newRepoConfig.gitignoreTemplate,
+              license_template: newRepoConfig.licenseTemplate,
+            },
+            github_token: token,
+            implementation_plan: plan,
+            create_new_branch: false, // Work on default branch for new repos
+            push_changes: true
+          }
+        : {
+            repo_url: selectedRepo!.html_url,
+            branch: selectedRepo!.default_branch || 'main',
+            github_token: token,
+            implementation_plan: plan,
+            create_new_branch: true,
+            new_branch_name: branchName,
+            push_changes: true
+          };
       
       const jobRes = await fetch(`${BASE_URL}/api/jobs/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          repo_url: selectedRepo.html_url,
-          branch: selectedRepo.default_branch || 'main',
-          github_token: token,
-          implementation_plan: plan,
-          create_new_branch: true,
-          new_branch_name: branchName,
-          push_changes: true
-        }),
+        body: JSON.stringify(jobPayload),
       });
 
       if (!jobRes.ok) {
@@ -428,54 +534,95 @@ export default function IndexScreen() {
         throw new Error(result.error_message || 'Job failed');
       }
 
-      setJobProgress({ status: 'creating_pr', message: 'Creating pull request...', percentage: 90 });
-      
-      const prRes = await fetch(`${BASE_URL}/api/github/create-pr`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          repo_owner: owner,
-          repo_name: repoName,
-          title: plan.title,
-          body: `## ${plan.summary}\n\n### Changes Made by AI\n- ${result.files_changed} files changed\n- ${result.commits_created} commits created\n- ${result.total_edits} edits\n\n**User Request:** ${prompt}\n\n---\n*Generated by Cloud Vibecoder AI Agent*\n*Execution time: ${result.execution_time_seconds.toFixed(1)}s*`,
-          head_branch: result.branch_name || branchName,
-          base_branch: selectedRepo.default_branch || 'main',
-          github_token: token
-        }),
-      });
-
-      if (!prRes.ok) {
-        throw new Error(`Failed to create PR: ${prRes.status}`);
-      }
-
-      const pr = await prRes.json();
-      console.log('PR created:', pr);
-
-      setJobProgress({ status: 'completed', message: 'Pull request created!', percentage: 100 });
-
-      Alert.alert(
-        '✅ Pull Request Created!',
-        `PR #${pr.number} has been created with real code changes!\n\n📊 Stats:\n• Files changed: ${result.files_changed}\n• Commits: ${result.commits_created}\n• AI tokens used: ${result.tokens_used}`,
-        [
-          {
-            text: 'View PR',
-            onPress: () => {
-              console.log('PR URL:', pr.html_url);
-            }
-          },
-          {
-            text: 'Done',
-            style: 'default',
-            onPress: () => {
-              setConfirmVisible(true);
-              setTimeout(() => {
-                setConfirmVisible(false);
+      // For new repos, changes are pushed directly to main - no PR needed
+      // For existing repos, create a PR
+      if (repoMode === 'new') {
+        setJobProgress({ status: 'completed', message: 'Repository created and code pushed!', percentage: 100 });
+        
+        Alert.alert(
+          '✅ Repository Created!',
+          `Your new repository "${newRepoConfig.name}" has been created with the generated code!\n\n📊 Stats:\n• Files changed: ${result.files_changed}\n• Commits: ${result.commits_created}\n• AI tokens used: ${result.tokens_used}`,
+          [
+            {
+              text: 'View Repository',
+              onPress: () => {
+                console.log('Repo URL:', result.repo_url);
+              }
+            },
+            {
+              text: 'Done',
+              style: 'default',
+              onPress: () => {
+                // Reset all state immediately
+                setCreatingPR(false);
+                setJobProgress(null);
+                setJobId(null);
                 handleReset();
-              }, 2000);
+                // Reset new repo form
+                setNewRepoConfig({
+                  name: '',
+                  description: '',
+                  private: false,
+                  gitignoreTemplate: null,
+                  licenseTemplate: null,
+                });
+              }
             }
-          }
-        ]
-      );
+          ]
+        );
+      } else {
+        // Existing repo - create PR
+        setJobProgress({ status: 'creating_pr', message: 'Creating pull request...', percentage: 90 });
+        
+        const [owner, repoName] = selectedRepo!.full_name.split('/');
+        
+        const prRes = await fetch(`${BASE_URL}/api/github/create-pr`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            repo_owner: owner,
+            repo_name: repoName,
+            title: plan.title,
+            body: `## ${plan.summary}\n\n### Changes Made by AI\n- ${result.files_changed} files changed\n- ${result.commits_created} commits created\n- ${result.total_edits} edits\n\n**User Request:** ${prompt}\n\n---\n*Generated by Cloud Vibecoder AI Agent*\n*Execution time: ${result.execution_time_seconds.toFixed(1)}s*`,
+            head_branch: result.branch_name || branchName,
+            base_branch: selectedRepo!.default_branch || 'main',
+            github_token: token
+          }),
+        });
+
+        if (!prRes.ok) {
+          throw new Error(`Failed to create PR: ${prRes.status}`);
+        }
+
+        const pr = await prRes.json();
+        console.log('PR created:', pr);
+
+        setJobProgress({ status: 'completed', message: 'Pull request created!', percentage: 100 });
+
+        Alert.alert(
+          '✅ Pull Request Created!',
+          `PR #${pr.number} has been created with real code changes!\n\n📊 Stats:\n• Files changed: ${result.files_changed}\n• Commits: ${result.commits_created}\n• AI tokens used: ${result.tokens_used}`,
+          [
+            {
+              text: 'View PR',
+              onPress: () => {
+                console.log('PR URL:', pr.html_url);
+              }
+            },
+            {
+              text: 'Done',
+              style: 'default',
+              onPress: () => {
+                setConfirmVisible(true);
+                setTimeout(() => {
+                  setConfirmVisible(false);
+                  handleReset();
+                }, 2000);
+              }
+            }
+          ]
+        );
+      }
 
     } catch (err) {
       console.error('Error in workflow:', err);
@@ -500,119 +647,150 @@ export default function IndexScreen() {
         { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }
       ]}
     >
-      {/* Repo selector */}
-      {isAuthed ? (
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Repository</Text>
-          <TouchableOpacity
-            style={styles.dropdown}
-            onPress={() => setReposOpen((o) => !o)}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.dropdownText} numberOfLines={1}>
-              {selectedRepo ? selectedRepo.full_name : 'Select a GitHub repository'}
-            </Text>
-            {loadingRepos ? (
-              <ActivityIndicator size="small" color={Accent.primary} />
-            ) : (
-              <Text style={styles.dropdownChevron}>{reposOpen ? '▲' : '▼'}</Text>
-            )}
-          </TouchableOpacity>
-
-          {reposOpen && (
-            <View style={styles.dropdownList}>
-              {repos.length === 0 && !loadingRepos ? (
-                <Text style={styles.dropdownEmpty}>No repositories found.</Text>
-              ) : (
-                <FlatList
-                  data={repos}
-                  keyExtractor={(item) => String(item.id)}
-                  renderItem={({ item }) => (
-                    <TouchableOpacity
-                      style={styles.dropdownItem}
-                      onPress={() => {
-                        setSelectedRepo(item);
-                        setRepo(item.html_url || '');
-                        setReposOpen(false);
-                        setShowFileBrowser(false);
-                        setFileTree([]);
-                        setCurrentPath('');
-                        setPathHistory([]);
-                      }}
-                    >
-                      <Text style={styles.dropdownItemText} numberOfLines={1}>
-                        {item.full_name}
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                  style={{ maxHeight: 200 }}
-                />
-              )}
-            </View>
-          )}
-        </View>
-      ) : (
+      {/* Auth check */}
+      {!isAuthed ? (
         <TouchableOpacity
           style={styles.authPrompt}
           onPress={() => router.push('/login')}
         >
           <Text style={styles.authPromptIcon}>⬢</Text>
-          <Text style={styles.authPromptText}>Sign in with GitHub to select a repository</Text>
+          <Text style={styles.authPromptText}>Sign in with GitHub to get started</Text>
         </TouchableOpacity>
-      )}
+      ) : (
+        <>
+          {/* Mode Selector */}
+          <RepoModeSelector 
+            mode={repoMode} 
+            onModeChange={(mode) => {
+              setRepoMode(mode);
+              // Reset selections when switching modes
+              if (mode === 'new') {
+                setSelectedRepo(null);
+                setRepo('');
+                setShowFileBrowser(false);
+              }
+            }}
+            disabled={loading}
+          />
 
-      {/* File Browser Button */}
-      {selectedRepo && !showFileBrowser && (
-        <TouchableOpacity
-          style={styles.fileBrowserButton}
-          onPress={() => {
-            setShowFileBrowser(true);
-            fetchFileTree('');
-          }}
-        >
-          <Text style={styles.fileBrowserButtonIcon}>📁</Text>
-          <Text style={styles.fileBrowserButtonText}>Browse Files</Text>
-        </TouchableOpacity>
-      )}
-
-      {/* File Browser */}
-      {showFileBrowser && selectedRepo && (
-        <View style={styles.fileBrowserContainer}>
-          <View style={styles.fileBrowserHeader}>
-            <TouchableOpacity onPress={handleBackInFileTree} style={styles.fileBrowserBackButton}>
-              <Text style={styles.fileBrowserBackText}>← Back</Text>
-            </TouchableOpacity>
-            <Text style={styles.fileBrowserPath} numberOfLines={1}>
-              {currentPath || selectedRepo.full_name}
-            </Text>
-            <TouchableOpacity onPress={() => setShowFileBrowser(false)} style={styles.fileBrowserCloseButton}>
-              <Text style={styles.fileBrowserCloseText}>✕</Text>
-            </TouchableOpacity>
-          </View>
-
-          {loadingFiles ? (
-            <View style={styles.fileBrowserLoading}>
-              <ActivityIndicator size="large" color={Accent.primary} />
-            </View>
-          ) : (
-            <FlatList
-              data={fileTree}
-              keyExtractor={(item) => item.path}
-              renderItem={({ item }) => (
+          {/* Existing Repo Selector */}
+          {repoMode === 'existing' && (
+            <>
+              <View style={styles.section}>
+                <Text style={styles.sectionLabel}>Repository</Text>
                 <TouchableOpacity
-                  style={styles.fileTreeItem}
-                  onPress={() => handleFileTreeItemPress(item)}
+                  style={styles.dropdown}
+                  onPress={() => setReposOpen((o) => !o)}
+                  activeOpacity={0.8}
                 >
-                  <Text style={styles.fileTreeIcon}>{item.type === 'dir' ? '📁' : '📄'}</Text>
-                  <Text style={styles.fileTreeName} numberOfLines={1}>
-                    {item.name}
+                  <Text style={styles.dropdownText} numberOfLines={1}>
+                    {selectedRepo ? selectedRepo.full_name : 'Select a GitHub repository'}
                   </Text>
+                  {loadingRepos ? (
+                    <ActivityIndicator size="small" color={Accent.primary} />
+                  ) : (
+                    <Text style={styles.dropdownChevron}>{reposOpen ? '▲' : '▼'}</Text>
+                  )}
+                </TouchableOpacity>
+
+                {reposOpen && (
+                  <View style={styles.dropdownList}>
+                    {repos.length === 0 && !loadingRepos ? (
+                      <Text style={styles.dropdownEmpty}>No repositories found.</Text>
+                    ) : (
+                      <FlatList
+                        data={repos}
+                        keyExtractor={(item) => String(item.id)}
+                        renderItem={({ item }) => (
+                          <TouchableOpacity
+                            style={styles.dropdownItem}
+                            onPress={() => {
+                              setSelectedRepo(item);
+                              setRepo(item.html_url || '');
+                              setReposOpen(false);
+                              setShowFileBrowser(false);
+                              setFileTree([]);
+                              setCurrentPath('');
+                              setPathHistory([]);
+                            }}
+                          >
+                            <Text style={styles.dropdownItemText} numberOfLines={1}>
+                              {item.full_name}
+                            </Text>
+                          </TouchableOpacity>
+                        )}
+                        style={{ maxHeight: 200 }}
+                      />
+                    )}
+                  </View>
+                )}
+              </View>
+
+              {/* File Browser Button */}
+              {selectedRepo && !showFileBrowser && (
+                <TouchableOpacity
+                  style={styles.fileBrowserButton}
+                  onPress={() => {
+                    setShowFileBrowser(true);
+                    fetchFileTree('');
+                  }}
+                >
+                  <Text style={styles.fileBrowserButtonIcon}>📁</Text>
+                  <Text style={styles.fileBrowserButtonText}>Browse Files</Text>
                 </TouchableOpacity>
               )}
-              style={styles.fileTreeList}
+
+              {/* File Browser */}
+              {showFileBrowser && selectedRepo && (
+                <View style={styles.fileBrowserContainer}>
+                  <View style={styles.fileBrowserHeader}>
+                    <TouchableOpacity onPress={handleBackInFileTree} style={styles.fileBrowserBackButton}>
+                      <Text style={styles.fileBrowserBackText}>← Back</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.fileBrowserPath} numberOfLines={1}>
+                      {currentPath || selectedRepo.full_name}
+                    </Text>
+                    <TouchableOpacity onPress={() => setShowFileBrowser(false)} style={styles.fileBrowserCloseButton}>
+                      <Text style={styles.fileBrowserCloseText}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {loadingFiles ? (
+                    <View style={styles.fileBrowserLoading}>
+                      <ActivityIndicator size="large" color={Accent.primary} />
+                    </View>
+                  ) : (
+                    <FlatList
+                      data={fileTree}
+                      keyExtractor={(item) => item.path}
+                      renderItem={({ item }) => (
+                        <TouchableOpacity
+                          style={styles.fileTreeItem}
+                          onPress={() => handleFileTreeItemPress(item)}
+                        >
+                          <Text style={styles.fileTreeIcon}>{item.type === 'dir' ? '📁' : '📄'}</Text>
+                          <Text style={styles.fileTreeName} numberOfLines={1}>
+                            {item.name}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                      style={styles.fileTreeList}
+                    />
+                  )}
+                </View>
+              )}
+            </>
+          )}
+
+          {/* New Repo Form */}
+          {repoMode === 'new' && (
+            <NewRepoForm
+              config={newRepoConfig}
+              onConfigChange={setNewRepoConfig}
+              disabled={loading}
             />
           )}
-        </View>
+        </>
       )}
 
       {/* Request Input */}

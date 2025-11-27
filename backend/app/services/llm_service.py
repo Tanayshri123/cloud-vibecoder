@@ -52,8 +52,78 @@ class LLMService:
             answered = [f"- Q: {a.question}\n  A: {a.answer}" for a in request.clarification_answers]
             clarifications_context = "Previously answered clarifications:\n" + "\n".join(answered) + "\n\n"
 
+        # Use different prompts for new repos vs existing repos
+        if request.is_new_repo:
+            return self._create_new_repo_crs_prompt(request, clarifications_context)
+        else:
+            return self._create_existing_repo_crs_prompt(request, clarifications_context)
+    
+    def _create_new_repo_crs_prompt(self, request: CRSRequest, clarifications_context: str) -> str:
+        """Create CRS prompt for building a NEW repository from scratch"""
+        
+        project_type_hint = ""
+        if request.project_type:
+            project_type_hint = f"\nSuggested Project Type: {request.project_type}"
+        
         prompt = f"""
-You are an expert software engineer tasked with analyzing change requests and creating detailed Change Request Specifications (CRS).
+You are a software engineer analyzing a request to create something NEW from scratch.
+
+User Request: "{request.user_prompt}"
+{project_type_hint}
+{f"Additional Context: {request.additional_context}" if request.additional_context else ""}
+{clarifications_context}
+
+Focus on WHAT THE USER ACTUALLY WANTS - not on boilerplate or scaffolding.
+For simple requests (algorithms, scripts, utilities), keep the scope minimal.
+
+Respond with JSON:
+{{
+    "goal": "What the user wants to build - be specific to their request",
+    "summary": "Brief summary focused on the actual functionality requested",
+    "constraints": [],
+    "acceptance_criteria": [
+        {{
+            "criterion": "Specific criterion based on user's request",
+            "testable": true,
+            "priority": "high"
+        }}
+    ],
+    "priority": "medium",
+    "scope": "Minimal scope needed to fulfill the request",
+    "component_hints": [
+        {{
+            "component": "Main component to create",
+            "confidence": 0.9,
+            "rationale": "Why needed"
+        }}
+    ],
+    "clarifying_questions": [],
+    "estimated_complexity": "simple|medium|complex",
+    "blast_radius": "isolated",
+    "confidence_score": 0.9,
+    "requires_clarification": false
+}}
+
+Guidelines:
+- Focus on the USER'S ACTUAL REQUEST, not generic project setup
+- For simple tasks (algorithms, validators, utilities): keep scope minimal
+- Don't over-engineer - if they want a string validator, that's all they need
+- Only ask clarifying questions if truly critical
+
+Rules for clarifying questions:
+- Ask at most {request.max_questions} clarifying questions.
+- Only ask when critical to proceed.
+- If the request is clear, return zero questions and set requires_clarification=false.
+
+Respond with ONLY the JSON object, no additional text.
+"""
+        return prompt
+    
+    def _create_existing_repo_crs_prompt(self, request: CRSRequest, clarifications_context: str) -> str:
+        """Create CRS prompt for modifying an EXISTING repository"""
+        
+        prompt = f"""
+You are an expert software engineer tasked with analyzing change requests for EXISTING codebases.
 
 Your job is to analyze the following user request and extract:
 1. Clear goal and summary
@@ -128,10 +198,25 @@ Respond with ONLY the JSON object, no additional text.
 """
         return prompt
     
-    async def _call_openai(self, prompt: str) -> Dict[str, Any]:
-        """Call OpenAI API"""
+    async def _call_openai(
+        self, 
+        prompt: str, 
+        system_prompt: Optional[str] = None,
+        max_tokens: int = 2000
+    ) -> Dict[str, Any]:
+        """Call OpenAI API
+        
+        Args:
+            prompt: The user prompt to send
+            system_prompt: Optional system prompt (defaults to JSON-focused CRS prompt)
+            max_tokens: Maximum tokens for response
+        """
         if not self.openai_api_key:
             raise ValueError("OpenAI API key not configured")
+        
+        # Default system prompt for CRS generation (JSON output)
+        if system_prompt is None:
+            system_prompt = "You are an expert software engineer who creates detailed Change Request Specifications. Always respond with valid JSON."
         
         headers = {
             "Authorization": f"Bearer {self.openai_api_key}",
@@ -143,7 +228,7 @@ Respond with ONLY the JSON object, no additional text.
             "messages": [
                 {
                     "role": "system",
-                    "content": "You are an expert software engineer who creates detailed Change Request Specifications. Always respond with valid JSON."
+                    "content": system_prompt
                 },
                 {
                     "role": "user",
@@ -151,7 +236,7 @@ Respond with ONLY the JSON object, no additional text.
                 }
             ],
             "temperature": 0.3,
-            "max_tokens": 2000
+            "max_tokens": max_tokens
         }
         
         async with httpx.AsyncClient(timeout=30.0) as client:

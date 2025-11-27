@@ -15,6 +15,8 @@ class CRSEndpointRequest(BaseModel):
     context: str = None
     answers: list[ClarificationAnswer] | None = None
     max_questions: int | None = 3
+    is_new_repo: bool = False  # True when creating a new repository from scratch
+    project_type: str | None = None  # e.g., 'react', 'node', 'python', 'fastapi'
 
 @router.post("/crs", response_model=CRSResponse)
 async def generate_crs(request: CRSEndpointRequest):
@@ -48,7 +50,9 @@ async def generate_crs(request: CRSEndpointRequest):
             repository_url=request.repo_url,
             additional_context=additional_context,
             clarification_answers=request.answers or [],
-            max_questions=request.max_questions or 3
+            max_questions=request.max_questions or 3,
+            is_new_repo=request.is_new_repo,
+            project_type=request.project_type
         )
         
         # Generate CRS using LLM service

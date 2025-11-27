@@ -1,7 +1,9 @@
 from github import Github, GithubException
 from typing import List, Optional, Dict, Any
 import logging
+import re
 from pydantic import BaseModel, Field
+from app.models.repo_model import RepoCreateRequest, RepoCreateResponse
 
 logger = logging.getLogger(__name__)
 
@@ -299,3 +301,258 @@ class GitHubService:
                 
         except Exception as e:
             raise ValueError(f"Failed to parse GitHub URL: {str(e)}")
+    
+    def _validate_repo_name(self, name: str) -> tuple[bool, Optional[str]]:
+        """
+        Validate repository name according to GitHub rules.
+        
+        Args:
+            name: Repository name to validate
+            
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        if not name:
+            return False, "Repository name cannot be empty"
+        
+        if len(name) > 100:
+            return False, "Repository name cannot exceed 100 characters"
+        
+        # GitHub repo names can only contain alphanumeric, hyphens, underscores, and dots
+        # Cannot start with a dot or hyphen
+        pattern = r'^[a-zA-Z0-9][a-zA-Z0-9._-]*$'
+        if not re.match(pattern, name):
+            return False, "Repository name can only contain alphanumeric characters, hyphens, underscores, and dots. Cannot start with a dot or hyphen."
+        
+        # Reserved names
+        reserved = ['..', '.git', '.github']
+        if name.lower() in reserved:
+            return False, f"'{name}' is a reserved name"
+        
+        return True, None
+    
+    async def create_repository(
+        self,
+        request: RepoCreateRequest
+    ) -> RepoCreateResponse:
+        """
+        Create a new GitHub repository for the authenticated user.
+        
+        Args:
+            request: Repository creation request with name, description, etc.
+            
+        Returns:
+            RepoCreateResponse with repository details or error
+        """
+        try:
+            # Validate repository name
+            is_valid, error_msg = self._validate_repo_name(request.name)
+            if not is_valid:
+                logger.error(f"Invalid repository name: {error_msg}")
+                return RepoCreateResponse(
+                    success=False,
+                    repo_url="",
+                    full_name="",
+                    html_url="",
+                    clone_url="",
+                    ssh_url="",
+                    default_branch="",
+                    owner="",
+                    error_message=error_msg
+                )
+            
+            logger.info(f"Creating repository: {request.name}")
+            
+            # Create GitHub client
+            github = self._get_github_client(request.github_token)
+            user = github.get_user()
+            
+            logger.info(f"Authenticated as: {user.login}")
+            
+            # Build create_repo kwargs
+            create_kwargs = {
+                "name": request.name,
+                "private": request.private,
+                "auto_init": request.auto_init,
+            }
+            
+            if request.description:
+                create_kwargs["description"] = request.description
+            
+            if request.gitignore_template:
+                create_kwargs["gitignore_template"] = request.gitignore_template
+            
+            if request.license_template:
+                create_kwargs["license_template"] = request.license_template
+            
+            # Create the repository
+            repo = user.create_repo(**create_kwargs)
+            
+            logger.info(f"✅ Repository created: {repo.full_name}")
+            logger.info(f"   URL: {repo.html_url}")
+            logger.info(f"   Clone URL: {repo.clone_url}")
+            
+            return RepoCreateResponse(
+                success=True,
+                repo_url=repo.html_url,
+                full_name=repo.full_name,
+                html_url=repo.html_url,
+                clone_url=repo.clone_url,
+                ssh_url=repo.ssh_url,
+                default_branch=repo.default_branch or "main",
+                owner=user.login
+            )
+            
+        except GithubException as e:
+            # Log full error details for debugging
+            logger.error(f"GitHub API error - Status: {e.status}, Data: {e.data if hasattr(e, 'data') else 'N/A'}")
+            
+            error_message = str(e.data.get('message', 'Unknown GitHub error')) if hasattr(e, 'data') else str(e)
+            
+            # Check for detailed errors in the response
+            if hasattr(e, 'data') and isinstance(e.data, dict):
+                errors = e.data.get('errors', [])
+                if errors:
+                    error_details = [err.get('message', str(err)) for err in errors]
+                    error_message = f"{error_message}: {'; '.join(error_details)}"
+            
+            # Handle specific error cases
+            if e.status == 422:
+                # Validation failed - usually means repo already exists
+                if 'name already exists' in error_message.lower():
+                    error_message = f"Repository '{request.name}' already exists for this user"
+                elif 'name is too long' in error_message.lower():
+                    error_message = "Repository name is too long"
+            elif e.status == 401:
+                error_message = "Invalid or expired GitHub token"
+            elif e.status == 403:
+                error_message = "Token does not have permission to create repositories. Ensure 'repo' scope is granted."
+            
+            logger.error(f"GitHub API error creating repo: {error_message}")
+            
+            return RepoCreateResponse(
+                success=False,
+                repo_url="",
+                full_name="",
+                html_url="",
+                clone_url="",
+                ssh_url="",
+                default_branch="",
+                owner="",
+                error_message=error_message
+            )
+            
+        except Exception as e:
+            logger.error(f"Unexpected error creating repository: {str(e)}")
+            return RepoCreateResponse(
+                success=False,
+                repo_url="",
+                full_name="",
+                html_url="",
+                clone_url="",
+                ssh_url="",
+                default_branch="",
+                owner="",
+                error_message=f"Unexpected error: {str(e)}"
+            )
+    
+    async def get_gitignore_templates(self, github_token: str) -> List[str]:
+        """
+        Get list of available gitignore templates from GitHub.
+        
+        Args:
+            github_token: GitHub personal access token
+            
+        Returns:
+            List of gitignore template names (e.g., ['Python', 'Node', 'Java'])
+        """
+        try:
+            github = self._get_github_client(github_token)
+            templates = github.get_gitignore_templates()
+            logger.info(f"Retrieved {len(templates)} gitignore templates")
+            return list(templates)
+        except GithubException as e:
+            logger.error(f"Failed to get gitignore templates: {str(e)}")
+            raise Exception(f"Failed to get gitignore templates: {str(e)}")
+    
+    async def get_license_templates(self, github_token: str) -> List[Dict[str, str]]:
+        """
+        Get list of available license templates from GitHub.
+        
+        Args:
+            github_token: GitHub personal access token
+            
+        Returns:
+            List of license templates with key and name
+        """
+        try:
+            github = self._get_github_client(github_token)
+            licenses = github.get_licenses()
+            
+            result = []
+            for lic in licenses:
+                result.append({
+                    "key": lic.key,
+                    "name": lic.name,
+                    "spdx_id": lic.spdx_id if hasattr(lic, 'spdx_id') else lic.key.upper()
+                })
+            
+            logger.info(f"Retrieved {len(result)} license templates")
+            return result
+        except GithubException as e:
+            logger.error(f"Failed to get license templates: {str(e)}")
+            raise Exception(f"Failed to get license templates: {str(e)}")
+    
+    async def check_repo_name_available(
+        self,
+        github_token: str,
+        repo_name: str
+    ) -> Dict[str, Any]:
+        """
+        Check if a repository name is available for the authenticated user.
+        
+        Args:
+            github_token: GitHub personal access token
+            repo_name: Repository name to check
+            
+        Returns:
+            Dict with 'available' boolean and 'message' string
+        """
+        try:
+            # Validate name format first
+            is_valid, error_msg = self._validate_repo_name(repo_name)
+            if not is_valid:
+                return {
+                    "available": False,
+                    "message": error_msg,
+                    "valid_format": False
+                }
+            
+            github = self._get_github_client(github_token)
+            user = github.get_user()
+            
+            try:
+                # Try to get the repo - if it exists, name is not available
+                user.get_repo(repo_name)
+                return {
+                    "available": False,
+                    "message": f"Repository '{repo_name}' already exists",
+                    "valid_format": True
+                }
+            except GithubException as e:
+                if e.status == 404:
+                    # Repo doesn't exist - name is available
+                    return {
+                        "available": True,
+                        "message": f"Repository name '{repo_name}' is available",
+                        "valid_format": True
+                    }
+                raise
+                
+        except Exception as e:
+            logger.error(f"Error checking repo name availability: {str(e)}")
+            return {
+                "available": False,
+                "message": f"Error checking availability: {str(e)}",
+                "valid_format": True
+            }

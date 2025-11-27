@@ -237,6 +237,161 @@ class GitHubService {
       }),
     });
   }
+
+  // ============================================
+  // Repository Creation Methods (Phase 4)
+  // ============================================
+
+  /**
+   * Create a new repository for the authenticated user
+   */
+  async createRepository(
+    name: string,
+    options: {
+      description?: string;
+      private?: boolean;
+      autoInit?: boolean;
+      gitignoreTemplate?: string;
+      licenseTemplate?: string;
+    } = {}
+  ): Promise<GitHubRepo> {
+    const body: Record<string, any> = {
+      name,
+      private: options.private ?? false,
+      auto_init: options.autoInit ?? true,
+    };
+
+    if (options.description) {
+      body.description = options.description;
+    }
+    if (options.gitignoreTemplate) {
+      body.gitignore_template = options.gitignoreTemplate;
+    }
+    if (options.licenseTemplate) {
+      body.license_template = options.licenseTemplate;
+    }
+
+    return this.makeRequest<GitHubRepo>('/user/repos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  }
+
+  /**
+   * Get available gitignore templates from GitHub
+   */
+  async getGitignoreTemplates(): Promise<string[]> {
+    return this.makeRequest<string[]>('/gitignore/templates');
+  }
+
+  /**
+   * Get available license templates from GitHub
+   */
+  async getLicenseTemplates(): Promise<Array<{ key: string; name: string; spdx_id: string }>> {
+    return this.makeRequest('/licenses');
+  }
+
+  /**
+   * Check if a repository name is available for the authenticated user
+   * @returns Object with available status and message
+   */
+  async checkRepoNameAvailable(name: string): Promise<{
+    available: boolean;
+    message: string;
+    validFormat: boolean;
+  }> {
+    // Validate name format first
+    const validationResult = this.validateRepoName(name);
+    if (!validationResult.valid) {
+      return {
+        available: false,
+        message: validationResult.message,
+        validFormat: false,
+      };
+    }
+
+    try {
+      const user = await this.getCurrentUser();
+      // Try to get the repo - if it exists, name is not available
+      await this.getRepository(user.login, name);
+      return {
+        available: false,
+        message: `Repository '${name}' already exists`,
+        validFormat: true,
+      };
+    } catch (error) {
+      // If we get a 404, the repo doesn't exist - name is available
+      if (error instanceof Error && error.message.includes('404')) {
+        return {
+          available: true,
+          message: `Repository name '${name}' is available`,
+          validFormat: true,
+        };
+      }
+      // For other errors, assume not available
+      return {
+        available: false,
+        message: `Error checking availability: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        validFormat: true,
+      };
+    }
+  }
+
+  /**
+   * Validate repository name format according to GitHub rules
+   */
+  validateRepoName(name: string): { valid: boolean; message: string } {
+    if (!name || name.trim().length === 0) {
+      return { valid: false, message: 'Repository name cannot be empty' };
+    }
+
+    if (name.length > 100) {
+      return { valid: false, message: 'Repository name cannot exceed 100 characters' };
+    }
+
+    // GitHub repo names can only contain alphanumeric, hyphens, underscores, and dots
+    // Cannot start with a dot or hyphen
+    const pattern = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
+    if (!pattern.test(name)) {
+      return {
+        valid: false,
+        message: 'Repository name can only contain letters, numbers, hyphens, underscores, and dots. Cannot start with . or -',
+      };
+    }
+
+    // Reserved names
+    const reserved = ['..', '.git', '.github'];
+    if (reserved.includes(name.toLowerCase())) {
+      return { valid: false, message: `'${name}' is a reserved name` };
+    }
+
+    return { valid: true, message: 'Valid repository name' };
+  }
+
+  /**
+   * Delete a repository (use with caution!)
+   */
+  async deleteRepository(owner: string, repo: string): Promise<void> {
+    const token = await this.getAccessToken();
+    
+    if (!token) {
+      throw new Error('Not authenticated. Please sign in with GitHub.');
+    }
+
+    const response = await fetch(`${this.baseUrl}/repos/${owner}/${repo}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/vnd.github.v3+json',
+      },
+    });
+
+    if (!response.ok && response.status !== 204) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.message || `Failed to delete repository: ${response.status}`);
+    }
+  }
 }
 
 export default new GitHubService();

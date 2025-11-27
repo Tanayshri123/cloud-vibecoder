@@ -13,6 +13,8 @@ class PlanGenerationRequest(BaseModel):
     crs: dict
     repo_url: str = None
     scope_preferences: list = None
+    is_new_repo: bool = False  # True when creating a new repository from scratch
+    project_type: str | None = None  # e.g., 'react', 'node', 'python', 'fastapi'
 
 @router.post("/plan-synthesis", response_model=PlanResponse)
 async def generate_implementation_plan(request: PlanGenerationRequest):
@@ -36,6 +38,13 @@ async def generate_implementation_plan(request: PlanGenerationRequest):
                 repo_context["structure"] = structure
             except Exception as e:
                 logger.warning(f"Failed to fetch repo structure: {e}")
+        
+        # For new repos, create context even without URL
+        if request.is_new_repo:
+            repo_context = repo_context or {}
+            repo_context["is_new_repo"] = True
+            if request.project_type:
+                repo_context["project_type"] = request.project_type
 
         plan_request = PlanRequest(
             crs=request.crs,
