@@ -307,8 +307,18 @@ class CodingAgent:
         )
         
         try:
-            # Call LLM
-            response = await self.llm._call_openai(prompt)
+            # Call LLM with code-generation-specific system prompt
+            code_system_prompt = (
+                "You are an expert software engineer who writes clean, production-ready code. "
+                "When asked to generate code, respond with ONLY the raw code content - no JSON wrapping, "
+                "no markdown formatting, no explanations. Just the code that should go in the file."
+            )
+            
+            response = await self.llm._call_openai(
+                prompt, 
+                system_prompt=code_system_prompt,
+                max_tokens=4000  # Allow more tokens for code generation
+            )
             
             # Extract content
             content = response['choices'][0]['message']['content']
@@ -320,6 +330,16 @@ class CodingAgent:
                 lines = content.split('\n')
                 # Remove first and last lines (``` markers)
                 content = '\n'.join(lines[1:-1])
+            
+            # Additional cleanup: remove any JSON wrapping if LLM still returns it
+            if content.startswith('{') and '"file"' in content[:50] and '"content"' in content[:100]:
+                try:
+                    parsed = json.loads(content)
+                    if isinstance(parsed, dict) and 'content' in parsed:
+                        content = parsed['content']
+                        logger.warning("LLM returned JSON-wrapped code, extracted content field")
+                except json.JSONDecodeError:
+                    pass  # Not valid JSON, use as-is
             
             return LLMCodeGenerationResponse(
                 new_content=content,

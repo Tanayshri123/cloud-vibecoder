@@ -198,10 +198,25 @@ Respond with ONLY the JSON object, no additional text.
 """
         return prompt
     
-    async def _call_openai(self, prompt: str) -> Dict[str, Any]:
-        """Call OpenAI API"""
+    async def _call_openai(
+        self, 
+        prompt: str, 
+        system_prompt: Optional[str] = None,
+        max_tokens: int = 2000
+    ) -> Dict[str, Any]:
+        """Call OpenAI API
+        
+        Args:
+            prompt: The user prompt to send
+            system_prompt: Optional system prompt (defaults to JSON-focused CRS prompt)
+            max_tokens: Maximum tokens for response
+        """
         if not self.openai_api_key:
             raise ValueError("OpenAI API key not configured")
+        
+        # Default system prompt for CRS generation (JSON output)
+        if system_prompt is None:
+            system_prompt = "You are an expert software engineer who creates detailed Change Request Specifications. Always respond with valid JSON."
         
         headers = {
             "Authorization": f"Bearer {self.openai_api_key}",
@@ -213,7 +228,7 @@ Respond with ONLY the JSON object, no additional text.
             "messages": [
                 {
                     "role": "system",
-                    "content": "You are an expert software engineer who creates detailed Change Request Specifications. Always respond with valid JSON."
+                    "content": system_prompt
                 },
                 {
                     "role": "user",
@@ -221,7 +236,7 @@ Respond with ONLY the JSON object, no additional text.
                 }
             ],
             "temperature": 0.3,
-            "max_tokens": 2000
+            "max_tokens": max_tokens
         }
         
         async with httpx.AsyncClient(timeout=30.0) as client:
