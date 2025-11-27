@@ -75,6 +75,8 @@ class CRSRequest(BaseModel):
     additional_context: Optional[str] = Field(default=None, description="Additional context about the project")
     clarification_answers: List[ClarificationAnswer] = Field(default_factory=list, description="Answers to previous clarifying questions")
     max_questions: int = Field(default=3, ge=0, le=3, description="Maximum number of clarifying questions to ask (0-3)")
+    is_new_repo: bool = Field(default=False, description="True when creating a new repository from scratch")
+    project_type: Optional[str] = Field(default=None, description="Project type hint (e.g., 'react', 'node', 'python', 'fastapi')")
 
 class CRSResponse(BaseModel):
     """Response containing the generated CRS"""

@@ -91,6 +91,61 @@ interface FileTreeItem {
   sha?: string;
 }
 
+// Detect project type from user prompt for new repos
+const detectProjectType = (prompt: string): string | undefined => {
+  const lowerPrompt = prompt.toLowerCase();
+  
+  if (lowerPrompt.includes('react native') || lowerPrompt.includes('expo')) {
+    return 'react-native';
+  }
+  if (lowerPrompt.includes('next.js') || lowerPrompt.includes('nextjs')) {
+    return 'nextjs';
+  }
+  if (lowerPrompt.includes('react')) {
+    return 'react';
+  }
+  if (lowerPrompt.includes('fastapi') || lowerPrompt.includes('fast api')) {
+    return 'fastapi';
+  }
+  if (lowerPrompt.includes('django')) {
+    return 'django';
+  }
+  if (lowerPrompt.includes('flask')) {
+    return 'flask';
+  }
+  if (lowerPrompt.includes('python')) {
+    return 'python';
+  }
+  if (lowerPrompt.includes('express') || lowerPrompt.includes('node.js') || lowerPrompt.includes('nodejs')) {
+    return 'node';
+  }
+  if (lowerPrompt.includes('typescript') || lowerPrompt.includes('ts')) {
+    return 'typescript';
+  }
+  if (lowerPrompt.includes('vue')) {
+    return 'vue';
+  }
+  if (lowerPrompt.includes('svelte')) {
+    return 'svelte';
+  }
+  if (lowerPrompt.includes('rust')) {
+    return 'rust';
+  }
+  if (lowerPrompt.includes('go ') || lowerPrompt.includes('golang')) {
+    return 'go';
+  }
+  
+  // Default: try to infer from common patterns
+  if (lowerPrompt.includes('api') || lowerPrompt.includes('backend') || lowerPrompt.includes('server')) {
+    return 'node'; // Default backend to node
+  }
+  if (lowerPrompt.includes('web') || lowerPrompt.includes('frontend') || lowerPrompt.includes('website')) {
+    return 'react'; // Default frontend to react
+  }
+  
+  return undefined;
+};
+
 export default function IndexScreen() {
   // Repository mode state
   const [repoMode, setRepoMode] = useState<RepoMode>('existing');
@@ -238,7 +293,9 @@ export default function IndexScreen() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           prompt: prompt.trim(),
-          repo_url: repo.trim() || undefined
+          repo_url: repoMode === 'existing' ? repo.trim() || undefined : undefined,
+          is_new_repo: repoMode === 'new',
+          project_type: repoMode === 'new' ? detectProjectType(prompt) : undefined
         }),
       });
       
@@ -284,9 +341,11 @@ export default function IndexScreen() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           prompt: prompt.trim(),
-          repo_url: repo.trim() || undefined,
+          repo_url: repoMode === 'existing' ? repo.trim() || undefined : undefined,
           answers,
-          max_questions: 0
+          max_questions: 0,
+          is_new_repo: repoMode === 'new',
+          project_type: repoMode === 'new' ? detectProjectType(prompt) : undefined
         }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
@@ -312,8 +371,10 @@ export default function IndexScreen() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           crs: crs,
-          repo_url: repo.trim() || undefined,
-          scope_preferences: ['minimal changes', 'frontend only']
+          repo_url: repoMode === 'existing' ? repo.trim() || undefined : undefined,
+          scope_preferences: repoMode === 'new' ? ['new project', 'create files'] : ['minimal changes', 'frontend only'],
+          is_new_repo: repoMode === 'new',
+          project_type: repoMode === 'new' ? detectProjectType(prompt) : undefined
         }),
       });
       
@@ -492,19 +553,19 @@ export default function IndexScreen() {
               text: 'Done',
               style: 'default',
               onPress: () => {
-                setConfirmVisible(true);
-                setTimeout(() => {
-                  setConfirmVisible(false);
-                  handleReset();
-                  // Reset new repo form
-                  setNewRepoConfig({
-                    name: '',
-                    description: '',
-                    private: false,
-                    gitignoreTemplate: null,
-                    licenseTemplate: null,
-                  });
-                }, 2000);
+                // Reset all state immediately
+                setCreatingPR(false);
+                setJobProgress(null);
+                setJobId(null);
+                handleReset();
+                // Reset new repo form
+                setNewRepoConfig({
+                  name: '',
+                  description: '',
+                  private: false,
+                  gitignoreTemplate: null,
+                  licenseTemplate: null,
+                });
               }
             }
           ]

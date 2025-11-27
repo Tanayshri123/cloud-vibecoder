@@ -56,6 +56,90 @@ class PlanSynthesisService:
         is_new_repo = repo_context.get('is_new_repo', False)
         project_type = repo_context.get('project_type')  # e.g., 'react', 'fastapi', 'node'
 
+        # Use different prompts for new vs existing repos
+        if is_new_repo:
+            return self._create_new_repo_plan_prompt(crs, repo_context, scope_prefs, project_type)
+        else:
+            return self._create_existing_repo_plan_prompt(crs, repo_context, scope_prefs)
+    
+    def _create_new_repo_plan_prompt(self, crs: dict, repo_context: dict, scope_prefs: list, project_type: str = None) -> str:
+        """Create plan prompt for building a NEW repository from scratch"""
+        
+        project_type_hint = f"Project Type: {project_type}" if project_type else ""
+        
+        prompt = f"""
+You are an expert software developer. Create an implementation plan for a NEW project.
+
+CRITICAL: Focus on implementing the USER'S ACTUAL REQUEST, not on scaffolding or boilerplate.
+- The user wants working code that does what they asked for
+- Only include minimal necessary files - don't over-engineer
+- For simple requests (algorithms, utilities, scripts), just create the main file(s) needed
+- Skip package managers, build tools, etc. unless the user specifically asked for them
+
+User's Goal: {crs.get('goal', 'N/A')}
+Summary: {crs.get('summary', 'N/A')}
+Scope: {crs.get('scope', 'N/A')}
+Acceptance Criteria: {[c['criterion'] for c in crs.get('acceptance_criteria', [])]}
+
+{project_type_hint}
+
+Respond with a JSON object:
+{{
+    "title": "Build: [Brief description]",
+    "summary": "What will be built",
+    "steps": [
+        {{
+            "step_number": 1,
+            "title": "Step title",
+            "description": "What to do",
+            "step_type": "implementation",
+            "estimated_time": "15 minutes",
+            "dependencies": [],
+            "reversible": true
+        }}
+    ],
+    "files_to_change": [
+        {{
+            "path": "main.py",
+            "intent": "create",
+            "rationale": "Main implementation file",
+            "diff_stub": "# Implementation here",
+            "priority": 1
+        }}
+    ],
+    "testing_plan": [
+        {{
+            "test_type": "manual",
+            "description": "Test the implementation",
+            "rationale": "Verify it works",
+            "files_to_test": ["main.py"],
+            "test_data_needed": "Sample input"
+        }}
+    ],
+    "risk_notes": [],
+    "blast_radius": "isolated",
+    "fallback_options": [],
+    "estimated_total_time": "30 minutes",
+    "complexity_score": 3,
+    "confidence_score": 0.9,
+    "scope_refinements": []
+}}
+
+GUIDELINES:
+- PRIORITIZE the user's actual request over boilerplate
+- For simple tasks: just create the main file with the implementation
+- Only add README.md if helpful, skip if trivial
+- Only add package.json/requirements.txt if external dependencies are truly needed
+- ALL files must have intent: "create"
+- Keep it minimal and focused on what the user asked for
+
+Respond with ONLY the JSON object, no additional text.
+"""
+        return prompt
+    
+    def _create_existing_repo_plan_prompt(self, crs: dict, repo_context: dict, scope_prefs: list) -> str:
+        """Create plan prompt for modifying an EXISTING repository"""
+        
         # Build repository context text without code content
         repo_context_lines = []
         if repo_context:
@@ -63,16 +147,12 @@ class PlanSynthesisService:
             structure = repo_context.get('structure')
             if url:
                 repo_context_lines.append(f"Repository URL: {url}")
-            if is_new_repo:
-                repo_context_lines.append("⚠️ This is a NEW REPOSITORY - scaffolding may be needed")
-                if project_type:
-                    repo_context_lines.append(f"Suggested project type: {project_type}")
-            elif structure:
+            if structure:
                 repo_context_lines.append("Repository Structure (names only):\n" + structure)
         repo_context_text = "\n".join(repo_context_lines)
 
         prompt = f"""
-You are an expert software architect tasked with creating detailed implementation plans from Change Request Specifications (CRS).
+You are an expert software architect tasked with creating detailed implementation plans for MODIFYING EXISTING codebases.
 
 Your job is to analyze the CRS and create a comprehensive implementation plan that includes:
 1. Sequential, reversible steps
@@ -164,7 +244,7 @@ Guidelines:
 - Focus on incremental, safe changes
 - IMPORTANT: dependencies must be an array of step numbers (integers), not strings
 - Example: "dependencies": [1, 2] means this step depends on steps 1 and 2
-{self._get_scaffolding_guidelines(is_new_repo, project_type)}
+
 Respond with ONLY the JSON object, no additional text.
 """
         return prompt
