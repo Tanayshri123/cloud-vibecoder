@@ -541,12 +541,31 @@ export default function IndexScreen() {
         
         Alert.alert(
           '✅ Repository Created!',
-          `Your new repository "${newRepoConfig.name}" has been created with the generated code!\n\n📊 Stats:\n• Files changed: ${result.files_changed}\n• Commits: ${result.commits_created}\n• AI tokens used: ${result.tokens_used}`,
+          `Your new repository "${newRepoConfig.name}" has been created with the generated code!`,
           [
             {
-              text: 'View Repository',
+              text: 'View Changes',
               onPress: () => {
-                console.log('Repo URL:', result.repo_url);
+                const params = new URLSearchParams({
+                  result: JSON.stringify(result),
+                  repoUrl: result.repo_url || '',
+                  isNewRepo: 'true'
+                });
+                router.push(`/changes?${params.toString()}` as any);
+                // Reset state after navigation
+                setTimeout(() => {
+                  setCreatingPR(false);
+                  setJobProgress(null);
+                  setJobId(null);
+                  handleReset();
+                  setNewRepoConfig({
+                    name: '',
+                    description: '',
+                    private: false,
+                    gitignoreTemplate: null,
+                    licenseTemplate: null,
+                  });
+                }, 100);
               }
             },
             {
@@ -601,12 +620,25 @@ export default function IndexScreen() {
 
         Alert.alert(
           '✅ Pull Request Created!',
-          `PR #${pr.number} has been created with real code changes!\n\n📊 Stats:\n• Files changed: ${result.files_changed}\n• Commits: ${result.commits_created}\n• AI tokens used: ${result.tokens_used}`,
+          `PR #${pr.number} has been created with real code changes!`,
           [
             {
-              text: 'View PR',
+              text: 'View Changes',
               onPress: () => {
-                console.log('PR URL:', pr.html_url);
+                const params = new URLSearchParams({
+                  result: JSON.stringify(result),
+                  prUrl: pr.html_url || '',
+                  repoUrl: selectedRepo!.html_url || '',
+                  isNewRepo: 'false'
+                });
+                router.push(`/changes?${params.toString()}` as any);
+                // Reset state after navigation
+                setTimeout(() => {
+                  setCreatingPR(false);
+                  setJobProgress(null);
+                  setJobId(null);
+                  handleReset();
+                }, 100);
               }
             },
             {
@@ -698,11 +730,14 @@ export default function IndexScreen() {
                     {repos.length === 0 && !loadingRepos ? (
                       <Text style={styles.dropdownEmpty}>No repositories found.</Text>
                     ) : (
-                      <FlatList
-                        data={repos}
-                        keyExtractor={(item) => String(item.id)}
-                        renderItem={({ item }) => (
+                      <ScrollView 
+                        style={{ maxHeight: 200 }}
+                        nestedScrollEnabled={true}
+                        showsVerticalScrollIndicator={true}
+                      >
+                        {repos.map((item) => (
                           <TouchableOpacity
+                            key={String(item.id)}
                             style={styles.dropdownItem}
                             onPress={() => {
                               setSelectedRepo(item);
@@ -718,9 +753,8 @@ export default function IndexScreen() {
                               {item.full_name}
                             </Text>
                           </TouchableOpacity>
-                        )}
-                        style={{ maxHeight: 200 }}
-                      />
+                        ))}
+                      </ScrollView>
                     )}
                   </View>
                 )}
