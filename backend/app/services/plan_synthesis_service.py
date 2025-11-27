@@ -51,6 +51,10 @@ class PlanSynthesisService:
         crs = request.crs
         repo_context = request.repository_context or {}
         scope_prefs = request.scope_preferences or []
+        
+        # Check if this is a new repository (empty or scaffolding needed)
+        is_new_repo = repo_context.get('is_new_repo', False)
+        project_type = repo_context.get('project_type')  # e.g., 'react', 'fastapi', 'node'
 
         # Build repository context text without code content
         repo_context_lines = []
@@ -59,7 +63,11 @@ class PlanSynthesisService:
             structure = repo_context.get('structure')
             if url:
                 repo_context_lines.append(f"Repository URL: {url}")
-            if structure:
+            if is_new_repo:
+                repo_context_lines.append("⚠️ This is a NEW REPOSITORY - scaffolding may be needed")
+                if project_type:
+                    repo_context_lines.append(f"Suggested project type: {project_type}")
+            elif structure:
                 repo_context_lines.append("Repository Structure (names only):\n" + structure)
         repo_context_text = "\n".join(repo_context_lines)
 
@@ -156,10 +164,77 @@ Guidelines:
 - Focus on incremental, safe changes
 - IMPORTANT: dependencies must be an array of step numbers (integers), not strings
 - Example: "dependencies": [1, 2] means this step depends on steps 1 and 2
-
+{self._get_scaffolding_guidelines(is_new_repo, project_type)}
 Respond with ONLY the JSON object, no additional text.
 """
         return prompt
+    
+    def _get_scaffolding_guidelines(self, is_new_repo: bool, project_type: str = None) -> str:
+        """Get additional guidelines for scaffolding new repositories."""
+        if not is_new_repo:
+            return ""
+        
+        guidelines = """
+NEW REPOSITORY SCAFFOLDING GUIDELINES:
+Since this is a new repository, your plan should include:
+1. FIRST STEP: Project scaffolding - create the basic project structure
+2. Include all necessary configuration files (package.json, requirements.txt, etc.)
+3. Set up the entry point file(s)
+4. Create a proper README.md with setup instructions
+5. Add appropriate .gitignore if not already present
+"""
+        
+        # Add project-type specific guidelines
+        if project_type:
+            type_guidelines = {
+                "react": """
+For React projects, include:
+- package.json with react, react-dom, react-scripts
+- public/index.html
+- src/index.js, src/App.js, src/App.css
+- Basic component structure
+""",
+                "node": """
+For Node.js projects, include:
+- package.json with express and basic dependencies
+- src/index.js as entry point
+- Basic route structure
+- .env.example for environment variables
+""",
+                "python": """
+For Python projects, include:
+- requirements.txt with dependencies
+- src/__init__.py and src/main.py
+- setup.py or pyproject.toml
+- Basic module structure
+""",
+                "fastapi": """
+For FastAPI projects, include:
+- requirements.txt with fastapi, uvicorn, pydantic
+- app/__init__.py and app/main.py
+- app/models.py for Pydantic models
+- run.py for development server
+- CORS middleware setup
+""",
+                "nextjs": """
+For Next.js projects, include:
+- package.json with next, react, react-dom
+- app/page.js and app/layout.js (App Router)
+- next.config.js
+- Basic page structure
+""",
+                "express-api": """
+For Express API projects, include:
+- package.json with express, cors, helmet, morgan
+- src/index.js with middleware setup
+- src/routes/index.js for route definitions
+- .env.example for configuration
+- Error handling middleware
+"""
+            }
+            guidelines += type_guidelines.get(project_type, "")
+        
+        return guidelines
     
     def _parse_plan_response(self, response: Dict[str, Any]) -> ImplementationPlan:
         """Parse LLM response into ImplementationPlan object"""

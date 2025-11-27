@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Header
 from app.services.github_service import (
     GitHubService, PullRequestRequest, PullRequest, GitHubCommit
 )
+from app.models.repo_model import RepoCreateRequest, RepoCreateResponse
 from pydantic import BaseModel, Field
-from typing import List
+from typing import List, Optional
 import logging
 
 logger = logging.getLogger(__name__)
@@ -238,6 +239,153 @@ async def parse_repo_url(request: ParseRepoUrlRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.post("/github/create-repo", response_model=RepoCreateResponse)
+async def create_repository(request: RepoCreateRequest):
+    """
+    Create a new GitHub repository for the authenticated user.
+    
+    This endpoint creates a new repository under the authenticated user's account.
+    The repository can be initialized with a README, gitignore, and license.
+    
+    Request body:
+    - name: Repository name (required, must be unique for user)
+    - description: Repository description (optional)
+    - private: Whether repo is private (default: false)
+    - auto_init: Initialize with README (default: true)
+    - gitignore_template: Gitignore template name (optional, e.g., 'Python', 'Node')
+    - license_template: License template key (optional, e.g., 'mit', 'apache-2.0')
+    - github_token: GitHub access token with repo scope (required)
+    
+    Returns:
+    - RepoCreateResponse with repository URLs and details
+    
+    Example:
+    ```
+    {
+      "name": "my-new-project",
+      "description": "A cool new project",
+      "private": false,
+      "auto_init": true,
+      "gitignore_template": "Python",
+      "license_template": "mit",
+      "github_token": "ghp_..."
+    }
+    ```
+    """
+    try:
+        logger.info(f"API: Creating repository '{request.name}'")
+        
+        result = await github_service.create_repository(request)
+        
+        if not result.success:
+            logger.error(f"API: Failed to create repository: {result.error_message}")
+            raise HTTPException(status_code=400, detail=result.error_message)
+        
+        logger.info(f"API: Repository created successfully: {result.full_name}")
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"API: Unexpected error creating repository: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/github/templates/gitignore")
+async def get_gitignore_templates(github_token: str = Header(..., alias="X-GitHub-Token")):
+    """
+    Get available gitignore templates from GitHub.
+    
+    Headers:
+    - X-GitHub-Token: GitHub personal access token
+    
+    Returns:
+    - List of gitignore template names (e.g., ['Python', 'Node', 'Java'])
+    
+    Example response:
+    ```
+    {
+      "templates": ["Python", "Node", "Java", "Go", "Rust", ...]
+    }
+    ```
+    """
+    try:
+        logger.info("API: Fetching gitignore templates")
+        templates = await github_service.get_gitignore_templates(github_token)
+        return {"templates": templates}
+    except Exception as e:
+        logger.error(f"API: Failed to get gitignore templates: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/github/templates/licenses")
+async def get_license_templates(github_token: str = Header(..., alias="X-GitHub-Token")):
+    """
+    Get available license templates from GitHub.
+    
+    Headers:
+    - X-GitHub-Token: GitHub personal access token
+    
+    Returns:
+    - List of license templates with key, name, and spdx_id
+    
+    Example response:
+    ```
+    {
+      "templates": [
+        {"key": "mit", "name": "MIT License", "spdx_id": "MIT"},
+        {"key": "apache-2.0", "name": "Apache License 2.0", "spdx_id": "Apache-2.0"},
+        ...
+      ]
+    }
+    ```
+    """
+    try:
+        logger.info("API: Fetching license templates")
+        templates = await github_service.get_license_templates(github_token)
+        return {"templates": templates}
+    except Exception as e:
+        logger.error(f"API: Failed to get license templates: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/github/check-repo-name")
+async def check_repo_name_available(
+    name: str,
+    github_token: str = Header(..., alias="X-GitHub-Token")
+):
+    """
+    Check if a repository name is available for the authenticated user.
+    
+    Query parameters:
+    - name: Repository name to check
+    
+    Headers:
+    - X-GitHub-Token: GitHub personal access token
+    
+    Returns:
+    - available: Whether the name is available
+    - message: Human-readable message
+    - valid_format: Whether the name format is valid
+    
+    Example response:
+    ```
+    {
+      "available": true,
+      "message": "Repository name 'my-project' is available",
+      "valid_format": true
+    }
+    ```
+    """
+    try:
+        logger.info(f"API: Checking availability of repo name '{name}'")
+        result = await github_service.check_repo_name_available(github_token, name)
+        return result
+    except Exception as e:
+        logger.error(f"API: Failed to check repo name: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/github/health")
 async def github_health():
     """
@@ -253,6 +401,10 @@ async def github_health():
             "create_pull_request",
             "get_branch_commits",
             "check_branch_exists",
-            "parse_repo_url"
+            "parse_repo_url",
+            "create_repository",
+            "get_gitignore_templates",
+            "get_license_templates",
+            "check_repo_name_available"
         ]
     }

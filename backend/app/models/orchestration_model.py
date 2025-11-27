@@ -8,6 +8,7 @@ class JobStatus(str, Enum):
     """Status of an orchestration job"""
     PENDING = "pending"
     INITIALIZING_VM = "initializing_vm"
+    CREATING_REPO = "creating_repo"  # New status for repo creation
     CLONING_REPO = "cloning_repo"
     EXECUTING_AGENT = "executing_agent"
     PUSHING_CHANGES = "pushing_changes"
@@ -16,15 +17,40 @@ class JobStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
+class NewRepoConfig(BaseModel):
+    """Configuration for creating a new repository"""
+    name: str = Field(description="Repository name")
+    description: Optional[str] = Field(default=None, description="Repository description")
+    private: bool = Field(default=False, description="Whether the repository is private")
+    gitignore_template: Optional[str] = Field(default=None, description="Gitignore template name")
+    license_template: Optional[str] = Field(default=None, description="License template key")
+
+
 class JobRequest(BaseModel):
-    """Request to create a new coding job"""
-    repo_url: str = Field(description="GitHub repository URL")
+    """Request to create a new coding job - supports both existing and new repos"""
+    # Existing repo fields (optional when creating new repo)
+    repo_url: Optional[str] = Field(default=None, description="GitHub repository URL (required if not creating new repo)")
     branch: str = Field(default="main", description="Branch to work on")
+    
+    # New repo fields
+    create_new_repo: bool = Field(default=False, description="Whether to create a new repository")
+    new_repo_config: Optional[NewRepoConfig] = Field(default=None, description="Configuration for new repository")
+    
+    # Common fields
     github_token: str = Field(description="GitHub personal access token")
     implementation_plan: Dict[str, Any] = Field(description="Implementation plan as dict")
     create_new_branch: bool = Field(default=True, description="Create a new branch for changes")
     new_branch_name: Optional[str] = Field(default=None, description="Name for new branch")
     push_changes: bool = Field(default=True, description="Push changes to remote")
+    
+    def model_post_init(self, __context) -> None:
+        """Validate that either repo_url or new_repo_config is provided"""
+        if self.create_new_repo:
+            if not self.new_repo_config:
+                raise ValueError("new_repo_config is required when create_new_repo is True")
+        else:
+            if not self.repo_url:
+                raise ValueError("repo_url is required when create_new_repo is False")
 
 
 class JobProgress(BaseModel):
@@ -45,8 +71,10 @@ class JobResult(BaseModel):
     vm_session_id: Optional[str] = Field(default=None, description="VM session ID")
     
     # Repository info
+    repo_url: Optional[str] = Field(default=None, description="Repository URL")
     repo_path: Optional[str] = Field(default=None, description="Local repository path")
     branch_name: Optional[str] = Field(default=None, description="Branch used")
+    created_new_repo: bool = Field(default=False, description="Whether a new repo was created")
     
     # Agent execution results
     files_changed: int = Field(default=0, description="Number of files changed")

@@ -2,10 +2,11 @@ from app.models.orchestration_model import (
     Job, JobRequest, JobResult, JobProgress, JobStatus
 )
 from app.models.plan_model import ImplementationPlan
-from app.models.repo_model import RepoCloneRequest
+from app.models.repo_model import RepoCloneRequest, RepoCreateRequest
 from app.services.vm_service import VMService
 from app.services.repo_service import RepositoryService
 from app.services.llm_service import LLMService
+from app.services.github_service import GitHubService
 from app.services.coding_agent_main import CodingAgent
 from app.services.agent_tools import AgentTools
 from datetime import datetime
@@ -31,6 +32,7 @@ class OrchestrationService:
         self.vm_service = VMService()
         self.repo_service = RepositoryService(self.vm_service)
         self.llm_service = LLMService()
+        self.github_service = GitHubService()
         
         # In-memory job storage (replace with Redis/DB in production)
         self.jobs: Dict[str, Job] = {}
@@ -58,7 +60,12 @@ class OrchestrationService:
         )
         
         self.jobs[job_id] = job
-        logger.info(f"📋 Created job {job_id} for {request.repo_url}")
+        
+        # Log appropriate message based on mode
+        if request.create_new_repo:
+            logger.info(f"📋 Created job {job_id} for new repo: {request.new_repo_config.name}")
+        else:
+            logger.info(f"📋 Created job {job_id} for {request.repo_url}")
         
         return job
     
@@ -83,7 +90,9 @@ class OrchestrationService:
         
         vm_session_id = None
         repo_path = None
+        repo_url = request.repo_url
         branch_name = request.branch
+        created_new_repo = False
         
         try:
             # Stage 1: Initialize VM
@@ -98,17 +107,50 @@ class OrchestrationService:
             vm_session_id = vm_session.session_id
             logger.info(f"✅ VM session created: {vm_session_id}")
             
-            # Stage 2: Clone Repository
+            # Stage 2: Create new repository if requested
+            if request.create_new_repo:
+                await self._update_progress(
+                    job_id,
+                    JobStatus.CREATING_REPO,
+                    15,
+                    f"Creating repository: {request.new_repo_config.name}..."
+                )
+                
+                # Build create request
+                create_request = RepoCreateRequest(
+                    name=request.new_repo_config.name,
+                    description=request.new_repo_config.description,
+                    private=request.new_repo_config.private,
+                    auto_init=True,  # Always init with README for new repos
+                    gitignore_template=request.new_repo_config.gitignore_template,
+                    license_template=request.new_repo_config.license_template,
+                    github_token=request.github_token
+                )
+                
+                create_result = await self.github_service.create_repository(create_request)
+                
+                if not create_result.success:
+                    raise Exception(f"Failed to create repository: {create_result.error_message}")
+                
+                repo_url = create_result.html_url
+                branch_name = create_result.default_branch
+                created_new_repo = True
+                
+                logger.info(f"✅ Repository created: {create_result.full_name}")
+                logger.info(f"   URL: {repo_url}")
+                logger.info(f"   Default branch: {branch_name}")
+            
+            # Stage 3: Clone Repository
             await self._update_progress(
                 job_id,
                 JobStatus.CLONING_REPO,
                 25,
-                f"Cloning repository {request.repo_url}..."
+                f"Cloning repository {repo_url}..."
             )
             
             clone_request = RepoCloneRequest(
-                repo_url=request.repo_url,
-                branch=request.branch,
+                repo_url=repo_url,
+                branch=branch_name,
                 github_token=request.github_token
             )
             
@@ -119,8 +161,8 @@ class OrchestrationService:
             repo_path = repo_session.local_path
             logger.info(f"✅ Repository cloned to: {repo_path}")
             
-            # Create new branch if requested
-            if request.create_new_branch:
+            # Create new branch if requested (skip for newly created repos - work on default branch)
+            if request.create_new_branch and not created_new_repo:
                 new_branch = request.new_branch_name or f"vibecoder-{job_id[:8]}"
                 await self.repo_service.create_branch(
                     vm_session_id,
@@ -129,6 +171,8 @@ class OrchestrationService:
                 )
                 branch_name = new_branch
                 logger.info(f"✅ Created new branch: {branch_name}")
+            elif created_new_repo:
+                logger.info(f"ℹ️  Working on default branch '{branch_name}' for new repository")
             
             # Stage 3: Execute Coding Agent
             await self._update_progress(
@@ -206,8 +250,10 @@ class OrchestrationService:
                 status=JobStatus.COMPLETED,
                 success=True,
                 vm_session_id=vm_session_id,
+                repo_url=repo_url,
                 repo_path=repo_path,
                 branch_name=branch_name,
+                created_new_repo=created_new_repo,
                 files_changed=agent_result.total_files_changed,
                 commits_created=len(agent_result.commits_created),
                 total_edits=agent_result.total_edits,
@@ -234,6 +280,8 @@ class OrchestrationService:
             current_status = job.progress.status
             if current_status == JobStatus.INITIALIZING_VM:
                 error_stage = "vm_initialization"
+            elif current_status == JobStatus.CREATING_REPO:
+                error_stage = "repository_creation"
             elif current_status == JobStatus.CLONING_REPO:
                 error_stage = "repository_cloning"
             elif current_status == JobStatus.EXECUTING_AGENT:
@@ -255,8 +303,10 @@ class OrchestrationService:
                 status=JobStatus.FAILED,
                 success=False,
                 vm_session_id=vm_session_id,
+                repo_url=repo_url,
                 repo_path=repo_path,
                 branch_name=branch_name,
+                created_new_repo=created_new_repo,
                 error_message=str(e),
                 error_stage=error_stage,
                 execution_time_seconds=execution_time,
