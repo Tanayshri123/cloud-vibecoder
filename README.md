@@ -1,117 +1,237 @@
-# Cloud Vibecoder
+# Cloud Vibecoder 🚀
 
-A full-stack application that generates implementation plans for GitHub repositories based on natural language prompts. The project consists of a React Native mobile app and a FastAPI backend deployed on Render.
+> **AI-Powered Code Generation & Repository Management**
 
-## 🎯 What It Does
+Cloud Vibecoder is a full-stack mobile application that uses AI to automatically generate code, create repositories, and implement features based on natural language descriptions. Built with React Native (Expo) and FastAPI, it leverages GPT-4 and E2B sandboxes for intelligent code generation.
 
-Cloud Vibecoder takes your natural language requests and creates structured implementation plans for GitHub repositories. Here's how it works:
+## ✨ Key Features
 
-1. **Input**: You provide a GitHub repository URL and describe what you want to change
-2. **Processing**: The backend receives your prompt and repository information
-3. **Output**: It generates a detailed plan with steps to implement your request
+### 🤖 **AI-Driven Development**
+- **Natural Language to Code**: Describe what you want in plain English, get working code
+- **Intelligent Planning**: Generates detailed implementation plans with CRS (Clarifying Requirements Summary)
+- **Multi-Step Execution**: Breaks down complex features into manageable steps
+- **Smart Code Generation**: Uses GPT-4 to write, test, and refine code
 
-## 🔄 Current Flow
+### 📦 **Repository Management**
+- **Create New Repos**: Automatically create GitHub repositories with generated code
+- **Modify Existing Repos**: Add features to existing repositories via pull requests
+- **File Browser**: Browse repository structure and select specific files
+- **Branch Management**: Automatic branch creation and PR generation
 
-### User Input
-- **GitHub Repository**: Enter any GitHub repo URL (e.g., `https://github.com/facebook/react`)
-- **Change Request**: Describe what you want to do in plain English (e.g., "Add dark mode toggle to the settings page")
+### 🔐 **GitHub Integration**
+- **OAuth Authentication**: Secure GitHub login via OAuth 2.0
+- **Repository Access**: Browse and select from your GitHub repositories
+- **Pull Request Creation**: Automatic PR generation with detailed descriptions
+- **Commit History**: View all changes and commits made by the AI
 
-### What Happens Next
-1. **Mobile App** sends the repository URL and prompt to the backend API
-2. **Backend** receives the data and processes it (currently returns a mock response)
-3. **Response** includes:
-   - A plan title based on your prompt
-   - A summary explaining the approach
-   - Step-by-step implementation instructions
+### 📊 **Progress Tracking**
+- **Real-Time Updates**: Live progress tracking during code generation
+- **Job Status**: Monitor execution status (pending → executing → completed)
+- **Detailed Results**: View files changed, commits created, and execution metrics
+- **Changes Summary**: Dedicated page to review all modifications
 
-### Current Backend Behavior
-The backend currently returns a **mock response** that demonstrates the structure:
-- Takes your prompt and creates a plan title
-- Generates a generic summary
-- Provides 4 standard steps:
-  1. Inspect the repository
-  2. Locate relevant code areas
-  3. Draft modification steps
-  4. Generate diff and propose PR
+## 🔄 Complete Workflow
 
-## Project Structure
+### 1. **User Input** 📝
+- Sign in with GitHub OAuth
+- Choose between creating a new repository or modifying an existing one
+- Describe your feature request in natural language
+- Optionally select specific files to modify
+
+### 2. **AI Processing** 🧠
+```
+User Prompt → CRS Generation → Plan Synthesis → Code Execution → PR/Repo Creation
+```
+
+1. **CRS Generation**: AI clarifies requirements and asks questions if needed
+2. **Plan Synthesis**: Creates detailed implementation plan with steps
+3. **Code Execution**: Generates code in E2B sandbox environment
+4. **Delivery**: Creates repository or pull request with changes
+
+### 3. **Review & Deploy** ✅
+- View detailed changes summary
+- Access generated pull request or repository
+- Review commits, files, and execution metrics
+- Merge PR when satisfied with changes
+
+## 🏗️ Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│              MOBILE APP (React Native + Expo)               │
+│  • GitHub OAuth • Repository Browser • File Selection      │
+│  • Real-time Progress • Changes Viewer                     │
+└────────────────┬────────────────────────────────────────────┘
+                 │
+                 │ HTTPS/REST API
+                 ▼
+┌─────────────────────────────────────────────────────────────┐
+│                FASTAPI BACKEND (Render)                     │
+│                                                             │
+│  ┌────────────────────────────────────────────────────┐   │
+│  │                 API ENDPOINTS                      │   │
+│  │  • /api/auth/github/*     - OAuth flow           │   │
+│  │  • /api/crs               - Requirements         │   │
+│  │  • /api/plan-synthesis    - Plan generation      │   │
+│  │  • /api/jobs/*            - Code execution       │   │
+│  │  • /api/github/*          - GitHub integration   │   │
+│  └────────────────────────────────────────────────────┘   │
+│                                                             │
+│  ┌────────────────────────────────────────────────────┐   │
+│  │                   SERVICES                         │   │
+│  │  • LLM Service (GPT-4)                            │   │
+│  │  • Orchestration Service                          │   │
+│  │  • GitHub Service                                 │   │
+│  │  • Plan Synthesis Service                         │   │
+│  └────────────────────────────────────────────────────┘   │
+└─────────────────┬───────────────────────────────────────────┘
+                  │
+    ┌─────────────┴─────────────┐
+    ▼                           ▼
+┌─────────────┐          ┌──────────────┐
+│   E2B       │          │   GitHub     │
+│  Sandbox    │          │     API      │
+│ (Execution) │          │  (Repos/PRs) │
+└─────────────┘          └──────────────┘
+```
+
+## 📁 Project Structure
 
 ```
 cloud-vibecoder/
-├── backend/           # FastAPI backend server (deployed on Render)
-│   ├── main.py       # Main API server with /api/plan endpoint
-│   └── .venv/        # Python virtual environment
-├── mobile/           # React Native mobile app
-│   ├── app/          # App screens and navigation
-│   ├── components/   # Reusable UI components
-│   ├── constants/    # App constants and themes
-│   └── package.json  # Node.js dependencies
-└── infra/           # Infrastructure configuration
+├── backend/
+│   ├── app/
+│   │   ├── api/                      # API endpoints
+│   │   │   ├── auth.py              # GitHub OAuth
+│   │   │   ├── crs.py               # Requirements generation
+│   │   │   ├── plan_synthesis.py    # Plan creation
+│   │   │   ├── agent_execution.py   # Job orchestration
+│   │   │   └── github.py            # GitHub operations
+│   │   ├── services/                # Business logic
+│   │   │   ├── llm_service.py       # GPT-4 integration
+│   │   │   ├── orchestration_service.py
+│   │   │   ├── plan_synthesis_service.py
+│   │   │   └── github_service.py
+│   │   ├── models/                  # Pydantic models
+│   │   │   ├── crs_model.py
+│   │   │   ├── plan_model.py
+│   │   │   └── orchestration_model.py
+│   │   └── core/                    # Configuration
+│   │       ├── config.py
+│   │       └── logging_config.py
+│   ├── main.py                      # FastAPI app
+│   └── requirements.txt
+├── mobile/
+│   ├── app/
+│   │   ├── (tabs)/                  # Main tab navigation
+│   │   │   ├── index.tsx           # Home/Create screen
+│   │   │   ├── explore.tsx         # Explore screen
+│   │   │   └── profile.tsx         # Profile screen
+│   │   ├── login.tsx               # GitHub OAuth login
+│   │   ├── changes.tsx             # Changes detail view
+│   │   └── _layout.tsx             # Root layout
+│   ├── components/                  # UI components
+│   ├── constants/                   # Theme & config
+│   │   └── theme.ts
+│   ├── services/                    # API clients
+│   │   └── githubService.ts
+│   └── package.json
+└── README.md
 ```
 
-### POST `/api/auth/github/exchange`
+## 🔌 API Endpoints
 
-Exchanges a GitHub OAuth authorization code for an access token and basic profile data. The mobile client hits this after obtaining a `code` from GitHub via Expo AuthSession.
+### Authentication
+- `POST /api/auth/github/exchange` - Exchange OAuth code for token
+- `GET /api/auth/github/callback` - GitHub OAuth callback
 
-**Request Body:**
-```json
-{
-  "code": "github-oauth-code",
-  "redirect_uri": "mobile://oauth-redirect"
-}
-```
+### Code Generation
+- `POST /api/crs` - Generate Clarifying Requirements Summary
+- `POST /api/plan-synthesis/synthesize` - Create implementation plan
+- `POST /api/jobs/create` - Start code generation job
+- `GET /api/jobs/{job_id}/progress` - Get job status
+- `GET /api/jobs/{job_id}/result` - Get job results
 
-**Response:**
-```json
-{
-  "access_token": "gho_...",
-  "token_type": "bearer",
-  "scope": "read:user,user:email",
-  "user": {
-    "id": 12345,
-    "login": "octocat",
-    "name": "The Octocat",
-    "avatar_url": "https://avatars.githubusercontent.com/u/583231?v=4",
-    "email": "octocat@github.com"
-  }
-}
-```
+### GitHub Operations
+- `POST /api/github/create-pr` - Create pull request
+- `POST /api/github/commits` - Get branch commits
+- `POST /api/github/parse-url` - Parse repository URL
 
-> The backend performs the code exchange with GitHub so the mobile app never needs to store the client secret.
-
-## Quick Start
+## 🚀 Quick Start
 
 ### Prerequisites
 
 - **Node.js** (v18 or higher)
-- **Python** (v3.8 or higher)
-- **Expo CLI** (`npm install -g @expo/cli`)
-- **Git**
+- **Python** (v3.11 or higher)
+- **Expo CLI** (`npm install -g expo-cli`)
+- **GitHub Account** (for OAuth)
+- **API Keys**:
+  - OpenAI API Key (GPT-4 access)
+  - E2B API Key (code execution)
+  - GitHub OAuth App (Client ID & Secret)
 
-### 1. Backend Setup (Optional - Already Deployed)
+### 1. Clone Repository
 
-The backend is already deployed at `https://cloud-vibecoder-1.onrender.com`. If you want to run locally:
+```bash
+git clone https://github.com/Tanayshri123/cloud-vibecoder.git
+cd cloud-vibecoder
+```
+
+### 2. Backend Setup
+
+#### Environment Variables
+
+Create `backend/.env`:
+
+```env
+# OpenAI Configuration
+OPENAI_API_KEY=sk-proj-...
+OPENAI_BASE_URL=https://api.openai.com/v1
+LLM_MODEL=gpt-4o-mini
+
+# GitHub OAuth
+GITHUB_CLIENT_ID=your_client_id
+GITHUB_CLIENT_SECRET=your_client_secret
+
+# E2B Sandbox
+E2B_API_KEY=your_e2b_key
+
+# CORS (optional for local dev)
+CORS_ORIGINS=http://localhost:8081,http://localhost:19006
+```
+
+#### Install & Run
 
 ```bash
 cd backend
 
 # Create virtual environment
 python -m venv .venv
-
-# Activate virtual environment
-# On macOS/Linux:
-source .venv/bin/activate
-# On Windows:
-# .venv\Scripts\activate
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
 # Install dependencies
-pip install fastapi uvicorn pydantic python-multipart
+pip install -r requirements.txt
 
-# Run the server
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+# Run server
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### 2. Mobile App Setup
+Backend will be available at `http://localhost:8000`
+
+### 3. Mobile App Setup
+
+#### Environment Variables
+
+Create `mobile/.env`:
+
+```env
+EXPO_PUBLIC_API_URL=https://cloud-vibecoder-1.onrender.com
+EXPO_PUBLIC_GITHUB_CLIENT_ID=your_client_id
+GITHUB_CLIENT_SECRET=your_client_secret
+GITHUB_CLIENT_ID=your_client_id
+```
+
+#### Install & Run
 
 ```bash
 cd mobile
@@ -119,104 +239,130 @@ cd mobile
 # Install dependencies
 npm install
 
-# Start the development server
+# Start Expo development server
 npm start
 ```
 
-This will open the Expo development tools. You can then:
-- Press `i` to open iOS Simulator
-- Press `a` to open Android Emulator
-- Press `w` to open in web browser
-- Scan the QR code with Expo Go app on your physical device
+Expo dev tools will open. You can:
+- Press `i` for iOS Simulator
+- Press `a` for Android Emulator  
+- Press `w` for web browser
+- Scan QR code with Expo Go app on your phone
 
-## Features
+### 4. GitHub OAuth Setup
 
-- **Production Ready**: Backend deployed on Render with automatic HTTPS
-- **Cross-Platform**: Works on iOS, Android, and Web
-- **Environment Configuration**: Easy switching between local and production APIs
-- **Modern UI**: Clean, responsive interface with proper theming
-- **Real-time Communication**: Mobile app communicates with deployed FastAPI backend
-- **GitHub Sign-In**: Native GitHub OAuth flow with server-side token exchange and profile retrieval
+1. Go to [GitHub Developer Settings](https://github.com/settings/developers)
+2. Create a new OAuth App:
+   - **Application name**: Cloud Vibecoder
+   - **Homepage URL**: `https://cloud-vibecoder-1.onrender.com`
+   - **Authorization callback URL**: `https://cloud-vibecoder-1.onrender.com/api/auth/github/callback`
+3. Copy Client ID and Client Secret to your `.env` files
 
-## API Endpoints
+## 💡 Usage Guide
 
-### POST `/api/plan`
+### Creating a New Repository
 
-Generates an implementation plan based on repository and prompt.
+1. **Sign In**: Tap "Sign in with GitHub"
+2. **Choose Mode**: Select "Create New Repository"
+3. **Configure Repo**:
+   - Enter repository name
+   - Add description (optional)
+   - Choose public/private
+   - Select .gitignore template (optional)
+   - Select license (optional)
+4. **Describe Feature**: Enter what you want to build
+5. **Generate**: Tap "Generate Plan"
+6. **Review Plan**: Review the AI-generated implementation plan
+7. **Execute**: Tap "Accept & Create Repository"
+8. **View Changes**: Tap "View Changes" to see detailed results
 
-**Request Body:**
-```json
-{
-  "repo": "https://github.com/facebook/react",
-  "prompt": "Add dark mode toggle to the settings page"
-}
-```
+### Modifying Existing Repository
 
-**Response:**
-```json
-{
-  "repo": "https://github.com/facebook/react",
-  "plan": {
-    "title": "Plan for 'Add dark mode toggle to the settings page'",
-    "summary": "This mock plan outlines how Cloud Vibecoder will implement your request.",
-    "steps": [
-      "Inspect repository: https://github.com/facebook/react",
-      "Locate relevant code areas for 'Add dark mode toggle to the settings page'",
-      "Draft modification steps",
-      "Generate diff and propose PR"
-    ]
-  }
-}
-```
+1. **Sign In**: Tap "Sign in with GitHub"
+2. **Choose Mode**: Select "Use Existing Repository"
+3. **Select Repo**: Choose from your GitHub repositories
+4. **Optional**: Browse and select specific files to modify
+5. **Describe Changes**: Enter what you want to add/modify
+6. **Generate**: Tap "Generate Plan"
+7. **Review Plan**: Review the implementation plan
+8. **Execute**: Tap "Accept & Create PR"
+9. **View Results**: See detailed changes and PR link
 
-## Configuration
+## 🛠️ Tech Stack
 
-### Environment Variables
+### Mobile App
+- **Framework**: React Native (Expo)
+- **Language**: TypeScript
+- **Navigation**: Expo Router (file-based)
+- **State Management**: React Hooks
+- **Authentication**: expo-web-browser, expo-auth-session
+- **Storage**: AsyncStorage
+- **UI**: Custom design system with modern typography
 
-The app uses environment variables for API configuration:
+### Backend
+- **Framework**: FastAPI
+- **Language**: Python 3.11+
+- **AI**: OpenAI GPT-4
+- **Execution**: E2B Code Interpreter (sandboxed)
+- **Validation**: Pydantic v2
+- **Deployment**: Render (auto-deploy from GitHub)
+- **CORS**: Configured for mobile app origins
 
-**Production (Default):**
-- Uses `https://cloud-vibecoder-1.onrender.com`
+### External Services
+- **GitHub API**: Repository management, PR creation
+- **OpenAI API**: GPT-4 for code generation
+- **E2B API**: Secure code execution environment
+- **Render**: Backend hosting and deployment
 
-**Local Development:**
-- Create a `.env` file in the mobile directory:
-  ```
-  EXPO_PUBLIC_API_URL=http://localhost:8000
-  EXPO_PUBLIC_GITHUB_CLIENT_ID=your_github_oauth_client_id
-  ```
-- Create a `.env` file in `backend/` and provide your GitHub OAuth credentials alongside the existing settings:
-  ```
-  OPENAI_API_KEY=sk-...
-  GITHUB_CLIENT_ID=your_github_oauth_client_id
-  GITHUB_CLIENT_SECRET=your_github_oauth_client_secret
-  ```
+## 🔒 Security
 
-GitHub requires you to register an OAuth application:
-1. Head to **Settings → Developer settings → OAuth Apps** in GitHub and create a new app.
-2. Add each redirect you plan to use so GitHub accepts them:
-   - Expo web dev: `http://localhost:19006/oauth-redirect`
-   - Expo Go / dev clients: value shown in the Expo CLI logs (usually `exp://127.0.0.1:8081/--/oauth-redirect`)
-   - Native builds: `mobile://oauth-redirect`
-   GitHub lets you register multiple callback URLs—add them all for reliable testing.
-3. Copy the generated **Client ID** and **Client Secret** into the `.env` files above.
+- **OAuth 2.0**: Secure GitHub authentication
+- **Token Storage**: Encrypted in AsyncStorage
+- **Server-Side Secrets**: Client secret never exposed to mobile
+- **Sandboxed Execution**: E2B provides isolated execution environment
+- **Environment Variables**: Sensitive data in .env files (gitignored)
 
-## Development
+## 📈 Performance
 
-### Backend Development
+- **Real-time Progress**: Live updates during code generation
+- **Job Polling**: 2-second intervals for status updates
+- **Timeout Handling**: 6-minute maximum execution time
+- **Error Recovery**: Graceful error handling with user feedback
+- **Caching**: GitHub API responses cached where applicable
 
-The backend uses FastAPI with automatic API documentation available at:
-- **Swagger UI**: `https://cloud-vibecoder-1.onrender.com/docs`
-- **ReDoc**: `https://cloud-vibecoder-1.onrender.com/redoc`
+## 🎨 UI/UX Features
 
-### Mobile Development
+- **Modern Design**: Clean, minimalistic interface
+- **Dark Mode Ready**: Theme system supports dark mode
+- **Responsive**: Works on all screen sizes
+- **Loading States**: Clear feedback during operations
+- **Error Messages**: Helpful error descriptions
+- **Progress Indicators**: Visual feedback for long operations
+- **Changes Viewer**: Dedicated page to review all modifications
 
-The mobile app uses:
-- **Expo Router** for navigation
-- **TypeScript** for type safety
-- **Environment variables** for API configuration
-- **React Native** for cross-platform UI
+## 📝 License
 
-## Current Status
+This project is open source and available under the [MIT License](LICENSE).
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## 📧 Contact
+
+For questions or support, please open an issue on GitHub.
+
+---
+
+## 🔗 Links
+
+- **Backend API**: [https://cloud-vibecoder-1.onrender.com](https://cloud-vibecoder-1.onrender.com)
+- **API Documentation**: [https://cloud-vibecoder-1.onrender.com/docs](https://cloud-vibecoder-1.onrender.com/docs)
+- **GitHub Repository**: [https://github.com/Tanayshri123/cloud-vibecoder](https://github.com/Tanayshri123/cloud-vibecoder)
+
+## ⭐ Star History
+
+If you find this project useful, please consider giving it a star on GitHub!
 
 ### ✅ What's Working
 - Mobile app with clean UI
