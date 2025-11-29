@@ -14,7 +14,12 @@ import {
   Platform,
 } from 'react-native';
 import { router } from 'expo-router';
-import * as WebBrowser from 'expo-web-browser';
+import {
+  AuthRequest,
+  AuthSessionResult,
+  makeRedirectUri,
+  ResponseType,
+} from 'expo-auth-session';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Accent, LightTheme, Typography, Spacing, Radius, Shadows } from '../constants/theme';
 
@@ -74,9 +79,10 @@ export default function LoginScreen() {
 
   const redirectUri = useMemo(
     () => {
-      // Use backend URL as redirect URI - GitHub will redirect here, then backend redirects to mobile app
-      const backendUrl = process.env.EXPO_PUBLIC_API_URL || 'https://cloud-vibecoder-1.onrender.com';
-      const uri = `${backendUrl}/api/auth/github/callback`;
+      const uri = makeRedirectUri({
+        scheme: 'exp',
+        path: 'oauth-redirect'
+      });
       console.log('[DEBUG] Generated Redirect URI:', uri);
       return uri;
     },
@@ -129,20 +135,69 @@ export default function LoginScreen() {
         scopes: GITHUB_SCOPES,
       });
 
-      // Build GitHub OAuth URL - backend will handle the redirect
-      const scopes = GITHUB_SCOPES.join(' ');
-      const authUrl = `https://github.com/login/oauth/authorize?client_id=${GITHUB_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}&allow_signup=true`;
+      const request = new AuthRequest({
+        clientId: GITHUB_CLIENT_ID,
+        scopes: GITHUB_SCOPES,
+        redirectUri,
+        responseType: ResponseType.Code,
+        extraParams: {
+          allow_signup: 'true',
+        },
+        usePKCE: false,
+      });
       
-      console.log('[GitHub OAuth] Opening auth URL:', authUrl);
-      
-      // Open browser - user will authorize, GitHub redirects to backend, backend redirects to mobile://oauth-success
-      // The deep link will be handled by oauth-redirect.tsx or the app's deep link handler
-      await WebBrowser.openBrowserAsync(authUrl);
-      
-      // Note: The actual token exchange and storage happens via deep link handling
-      // We can't wait for it here since it happens in a different flow
-      // The user will be redirected back to the app via mobile://oauth-success
-      
+      const url = await request.makeAuthUrlAsync(GITHUB_DISCOVERY);
+      console.log('[GitHub OAuth] Auth URL:', url);
+
+      const result = await request.promptAsync(GITHUB_DISCOVERY);
+      console.log('[GitHub OAuth] AuthSession result', result);
+
+      if (result.type === 'error') {
+        const errorDescription = (result as AuthSessionResult & { params?: { error_description?: string } })?.params?.error_description;
+        throw new Error(errorDescription || 'GitHub returned an error during authentication');
+      }
+
+      if (result.type !== 'success' || !result.params?.code) {
+        if (result.type !== 'dismiss') {
+          Alert.alert('GitHub Login', 'GitHub login was cancelled.');
+        }
+        return;
+      }
+
+      const exchangeResponse = await fetch(`${API_BASE_URL}/api/auth/github/exchange`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: result.params.code,
+          redirect_uri: redirectUri,
+        }),
+      });
+
+      console.log('[GitHub OAuth] Exchange response status', {
+        status: exchangeResponse.status,
+        url: exchangeResponse.url,
+      });
+
+      if (!exchangeResponse.ok) {
+        const errorPayload = await exchangeResponse.json().catch(() => ({}));
+        console.error('[GitHub OAuth] Exchange failure payload', errorPayload);
+        throw new Error(errorPayload?.detail || 'GitHub exchange failed');
+      }
+
+      const payload = await exchangeResponse.json();
+      console.log('[GitHub OAuth] Exchange success payload', payload);
+      const userName = payload?.user?.name || payload?.user?.login || 'GitHub user';
+
+      await AsyncStorage.setItem('github_access_token', payload.access_token);
+      await AsyncStorage.setItem('github_user', JSON.stringify(payload.user));
+      console.log('[GitHub OAuth] Token and user data stored');
+
+      Alert.alert('Success', `Signed in as ${userName}`, [
+        {
+          text: 'Continue',
+          onPress: () => router.push('/(tabs)'),
+        },
+      ]);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unexpected error during GitHub login';
       console.error('[GitHub OAuth] Login error', error);
