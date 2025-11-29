@@ -398,22 +398,66 @@ async def github_oauth_callback(code: str, state: str = None, error: str = None)
             <h1>✅ Authentication Successful!</h1>
             <p>Redirecting you back to the app...</p>
             <div class="spinner"></div>
-            <p style="font-size: 0.9rem; margin-top: 2rem;">If you're not redirected automatically,</p>
-            <a href="{deep_link_url}" class="button">Open App</a>
+            <p style="font-size: 0.9rem; margin-top: 2rem;">Tap the button below to return to the app:</p>
+            <a href="{deep_link_url}" id="openAppBtn" class="button" onclick="openDeepLink(); return false;">Open App</a>
         </div>
         <script>
-            // Try to open the deep link immediately
-            window.location.href = "{deep_link_url}";
+            // Multiple methods to trigger deep link (Safari compatibility)
+            function openDeepLink() {{
+                const url = "{deep_link_url}";
+                
+                // Method 1: Direct location change
+                try {{
+                    window.location.href = url;
+                }} catch (e) {{
+                    console.log('Method 1 failed:', e);
+                }}
+                
+                // Method 2: Try replace (more reliable for redirects)
+                setTimeout(function() {{
+                    try {{
+                        window.location.replace(url);
+                    }} catch (e) {{
+                        console.log('Method 2 failed:', e);
+                    }}
+                }}, 100);
+                
+                // Method 3: Hidden iframe (bypasses some blockers)
+                setTimeout(function() {{
+                    try {{
+                        const iframe = document.createElement('iframe');
+                        iframe.style.display = 'none';
+                        iframe.style.width = '1px';
+                        iframe.style.height = '1px';
+                        iframe.src = url;
+                        document.body.appendChild(iframe);
+                        setTimeout(function() {{
+                            if (iframe.parentNode) {{
+                                document.body.removeChild(iframe);
+                            }}
+                        }}, 1000);
+                    }} catch (e) {{
+                        console.log('Method 3 failed:', e);
+                    }}
+                }}, 200);
+                
+                return false;
+            }}
             
-            // Fallback: try again after a short delay
+            // Make function available globally
+            window.openDeepLink = openDeepLink;
+            
+            // Try immediately on page load
+            openDeepLink();
+            
+            // Also try on any user interaction (Safari sometimes requires this)
+            document.addEventListener('touchstart', openDeepLink, {{ once: true }});
+            document.addEventListener('click', openDeepLink, {{ once: true }});
+            
+            // Auto-trigger after short delay (simulates user interaction)
             setTimeout(function() {{
-                window.location.href = "{deep_link_url}";
+                openDeepLink();
             }}, 500);
-            
-            // If still not redirected after 2 seconds, show manual button
-            setTimeout(function() {{
-                document.querySelector('.button').style.display = 'inline-block';
-            }}, 2000);
         </script>
     </body>
     </html>
