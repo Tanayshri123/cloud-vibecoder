@@ -89,7 +89,7 @@ export default function ProfileScreen() {
   };
 
   const handleHelp = () => {
-    Alert.alert('Help & Support', 'Visit our documentation at docs.cloudvibecoder.com');
+    Alert.alert('Help & Support', 'Help & support is coming soon!');
   };
 
   const menuItems: MenuItem[] = [
