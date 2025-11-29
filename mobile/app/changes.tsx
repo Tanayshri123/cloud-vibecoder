@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Linking, Alert, ActivityIndicator } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Accent, LightTheme, Typography, Spacing, Radius } from '../constants/theme';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import githubService from '../services/githubService';
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://cloud-vibecoder-1.onrender.com';
 
@@ -51,9 +51,9 @@ export default function ChangesScreen() {
     setIsCreatingPR(true);
 
     try {
-      const token = await AsyncStorage.getItem('github_token');
+      const token = await githubService.getAccessToken();
       if (!token) {
-        throw new Error('Not authenticated');
+        throw new Error('Not authenticated. Please sign in with GitHub.');
       }
 
       const [owner, repoName] = repoFullName.split('/');

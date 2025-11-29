@@ -169,6 +169,8 @@ export default function IndexScreen() {
   const [plan, setPlan] = useState<ImplementationPlan | null>(null);
   const [loading, setLoading] = useState(false);
   const [currentStep, setCurrentStep] = useState<'input' | 'clarify' | 'crs' | 'plan'>('input');
+  const [isEditingCRS, setIsEditingCRS] = useState(false);
+  const [isEditingPlan, setIsEditingPlan] = useState(false);
   const [clarifyQuestions, setClarifyQuestions] = useState<ClarifyingQuestion[]>([]);
   const [clarifyAnswers, setClarifyAnswers] = useState<Record<number, string>>({});
   const [confirmVisible, setConfirmVisible] = useState(false);
@@ -179,6 +181,14 @@ export default function IndexScreen() {
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [currentPath, setCurrentPath] = useState('');
   const [pathHistory, setPathHistory] = useState<string[]>([]);
+  // Plan file picker state (for selecting files to add to implementation plan)
+  const [showPlanFilePicker, setShowPlanFilePicker] = useState(false);
+  const [planFileTree, setPlanFileTree] = useState<FileTreeItem[]>([]);
+  const [planCurrentPath, setPlanCurrentPath] = useState('');
+  const [planPathHistory, setPlanPathHistory] = useState<string[]>([]);
+  const [planFileSearch, setPlanFileSearch] = useState('');
+  const [loadingPlanFiles, setLoadingPlanFiles] = useState(false);
+  const [selectedPlanFiles, setSelectedPlanFiles] = useState<Record<string, FileTreeItem>>({});
   const [planModelUsed, setPlanModelUsed] = useState<string | null>(null);
   const [creatingPR, setCreatingPR] = useState(false);
   const [jobProgress, setJobProgress] = useState<{status: string; message: string; percentage: number} | null>(null);
@@ -260,6 +270,116 @@ export default function IndexScreen() {
     }
   };
 
+  // Plan file picker helpers (for adding files to the implementation plan)
+  const fetchPlanFileTree = async (path: string = '') => {
+    if (!selectedRepo) return;
+
+    setLoadingPlanFiles(true);
+    try {
+      const [owner, repoName] = selectedRepo.full_name.split('/');
+      const contents = await githubService.getRepositoryContents(owner, repoName, path);
+      const items = Array.isArray(contents) ? contents : [contents];
+
+      const mapped: FileTreeItem[] = items.map((item: any) => ({
+        name: item.name,
+        path: item.path,
+        type: item.type === 'dir' ? 'dir' : 'file',
+        size: item.size,
+        sha: item.sha,
+      }));
+
+      mapped.sort((a, b) => {
+        if (a.type === b.type) return a.name.localeCompare(b.name);
+        return a.type === 'dir' ? -1 : 1;
+      });
+
+      setPlanFileTree(mapped);
+      setPlanCurrentPath(path);
+    } catch (err) {
+      console.error('Error fetching plan file tree:', err);
+      Alert.alert(
+        'Error',
+        `Failed to load repository files: ${err instanceof Error ? err.message : 'Unknown error'}`
+      );
+    } finally {
+      setLoadingPlanFiles(false);
+    }
+  };
+
+  const handlePlanFileItemPress = (item: FileTreeItem) => {
+    if (item.type === 'dir') {
+      setPlanPathHistory(prev => [...prev, planCurrentPath]);
+      fetchPlanFileTree(item.path);
+    } else {
+      setSelectedPlanFiles(prev => {
+        const next = { ...prev };
+        if (next[item.path]) {
+          delete next[item.path];
+        } else {
+          next[item.path] = item;
+        }
+        return next;
+      });
+    }
+  };
+
+  const handleBackInPlanFileTree = () => {
+    if (planPathHistory.length > 0) {
+      const previous = planPathHistory[planPathHistory.length - 1];
+      setPlanPathHistory(planPathHistory.slice(0, -1));
+      fetchPlanFileTree(previous);
+    } else {
+      setShowPlanFilePicker(false);
+      setPlanFileSearch('');
+    }
+  };
+
+  const handleConfirmPlanFileSelection = () => {
+    if (!plan) {
+      setShowPlanFilePicker(false);
+      setPlanFileSearch('');
+      return;
+    }
+
+    const selectedItems = Object.values(selectedPlanFiles);
+    if (!selectedItems.length) {
+      setShowPlanFilePicker(false);
+      setPlanFileSearch('');
+      return;
+    }
+
+    setPlan(prev => {
+      if (!prev) return prev;
+      const existing = prev.files_to_change || [];
+      const existingPaths = new Set(existing.map(f => f.path));
+      
+      // Calculate max priority from existing files to avoid duplicates
+      const maxPriority = existing.length > 0 
+        ? Math.max(...existing.map(f => f.priority || 0))
+        : 0;
+
+      const additions: FileChange[] = selectedItems
+        .filter(item => !existingPaths.has(item.path))
+        .map((item, idx) => ({
+          path: item.path,
+          intent: 'modify',
+          rationale: '',
+          priority: maxPriority + idx + 1,
+        }));
+
+      if (!additions.length) return prev;
+
+      return {
+        ...prev,
+        files_to_change: [...existing, ...additions],
+      };
+    });
+
+    setShowPlanFilePicker(false);
+    setSelectedPlanFiles({});
+    setPlanFileSearch('');
+  };
+
   const handleFileTreeItemPress = (item: FileTreeItem) => {
     if (item.type === 'dir') {
       setPathHistory([...pathHistory, currentPath]);
@@ -310,6 +430,7 @@ export default function IndexScreen() {
         setCurrentStep('clarify');
       } else {
         setCrs(crsResp);
+        setIsEditingCRS(false);
         setCurrentStep('crs');
       }
     } catch (err) {
@@ -351,6 +472,7 @@ export default function IndexScreen() {
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       const data = await res.json();
       setCrs(data.crs);
+      setIsEditingCRS(false);
       setCurrentStep('crs');
     } catch (err) {
       console.error('Clarification submit error:', err);
@@ -385,6 +507,7 @@ export default function IndexScreen() {
       const data = await res.json();
       setPlan(data.plan);
       setPlanModelUsed(data.model_used || null);
+      setIsEditingPlan(false);
       setCurrentStep('plan');
     } catch (err) {
       console.error('Plan generation error:', err);
@@ -401,6 +524,9 @@ export default function IndexScreen() {
     setCrs(null);
     setPlan(null);
     setPlanModelUsed(null);
+    setIsEditingCRS(false);
+    setIsEditingPlan(false);
+    setShowPlanFilePicker(false);
     setCurrentStep('input');
   };
 
@@ -839,28 +965,90 @@ export default function IndexScreen() {
   const renderCRSStep = () => (
     <ScrollView style={styles.resultContainer} showsVerticalScrollIndicator={false}>
       <View style={styles.resultHeader}>
-        <View>
+        <View style={styles.resultHeaderTitle}>
           <Text style={styles.resultTitle}>Specification</Text>
-          <Text style={styles.resultSubtitle}>Review your change request</Text>
+          <Text style={styles.resultSubtitle}>Review and refine your change request</Text>
         </View>
+      </View>
+
+      <View style={styles.inlineActionRow}>
+        <TouchableOpacity
+          style={styles.editButton}
+          onPress={() => setIsEditingCRS(prev => !prev)}
+        >
+          <Text style={styles.editButtonText}>{isEditingCRS ? 'Done Editing' : 'Edit Spec'}</Text>
+        </TouchableOpacity>
         <TouchableOpacity style={styles.resetButton} onPress={handleReset}>
           <Text style={styles.resetButtonText}>Start Over</Text>
         </TouchableOpacity>
       </View>
 
       <View style={styles.specCard}>
-        <Text style={styles.specGoal}>{crs?.goal}</Text>
-        <Text style={styles.specSummary}>{crs?.summary}</Text>
+        {isEditingCRS ? (
+          <>
+            <TextInput
+              style={styles.specGoalInput}
+              value={crs?.goal || ''}
+              onChangeText={(text) =>
+                setCrs(prev => prev ? { ...prev, goal: text } : prev)
+              }
+              placeholder="Goal"
+              placeholderTextColor={LightTheme.textTertiary}
+            />
+            <TextInput
+              style={styles.specSummaryInput}
+              value={crs?.summary || ''}
+              onChangeText={(text) =>
+                setCrs(prev => prev ? { ...prev, summary: text } : prev)
+              }
+              placeholder="Summary"
+              placeholderTextColor={LightTheme.textTertiary}
+              multiline
+            />
+          </>
+        ) : (
+          <>
+            <Text style={styles.specGoal}>{crs?.goal}</Text>
+            <Text style={styles.specSummary}>{crs?.summary}</Text>
+          </>
+        )}
         
         <View style={styles.metaRow}>
-          <View style={styles.metaBadge}>
-            <Text style={styles.metaBadgeText}>{crs?.priority}</Text>
-          </View>
-          <View style={styles.metaBadge}>
-            <Text style={styles.metaBadgeText}>{crs?.scope}</Text>
-          </View>
+          {isEditingCRS ? (
+            <>
+              <TextInput
+                style={styles.metaInput}
+                value={crs?.priority || ''}
+                onChangeText={(text) =>
+                  setCrs(prev => prev ? { ...prev, priority: text } : prev)
+                }
+                placeholder="Priority"
+                placeholderTextColor={LightTheme.textTertiary}
+              />
+              <TextInput
+                style={styles.metaInput}
+                value={crs?.scope || ''}
+                onChangeText={(text) =>
+                  setCrs(prev => prev ? { ...prev, scope: text } : prev)
+                }
+                placeholder="Scope"
+                placeholderTextColor={LightTheme.textTertiary}
+              />
+            </>
+          ) : (
+            <>
+              <View style={styles.metaBadge}>
+                <Text style={styles.metaBadgeText}>{crs?.priority}</Text>
+              </View>
+              <View style={styles.metaBadge}>
+                <Text style={styles.metaBadgeText}>{crs?.scope}</Text>
+              </View>
+            </>
+          )}
           <View style={[styles.metaBadge, styles.metaBadgeAccent]}>
-            <Text style={styles.metaBadgeTextAccent}>{Math.round((crs?.confidence_score || 0) * 100)}%</Text>
+            <Text style={styles.metaBadgeTextAccent}>
+              {Math.round((crs?.confidence_score || 0) * 100)}%
+            </Text>
           </View>
         </View>
 
@@ -870,9 +1058,61 @@ export default function IndexScreen() {
             {crs.constraints.map((constraint, i) => (
               <View key={i} style={styles.listItem}>
                 <View style={styles.listItemBullet} />
-                <Text style={styles.listItemText}>{constraint.description}</Text>
+                {isEditingCRS ? (
+                  <View style={styles.editableRow}>
+                    <TextInput
+                      style={styles.listItemInput}
+                      value={constraint.description}
+                      onChangeText={(text) =>
+                        setCrs(prev => {
+                          if (!prev) return prev;
+                          const updated = prev.constraints.map((c, idx) =>
+                            idx === i ? { ...c, description: text } : c
+                          );
+                          return { ...prev, constraints: updated };
+                        })
+                      }
+                      placeholder="Constraint description"
+                      placeholderTextColor={LightTheme.textTertiary}
+                      multiline
+                    />
+                    <TouchableOpacity
+                      style={styles.removePill}
+                      onPress={() =>
+                        setCrs(prev => {
+                          if (!prev) return prev;
+                          const updated = prev.constraints.filter((_, idx) => idx !== i);
+                          return { ...prev, constraints: updated };
+                        })
+                      }
+                    >
+                      <Text style={styles.removePillText}>Remove</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <Text style={styles.listItemText}>{constraint.description}</Text>
+                )}
               </View>
             ))}
+            {isEditingCRS && (
+              <TouchableOpacity
+                style={styles.addRowButton}
+                onPress={() =>
+                  setCrs(prev => {
+                    if (!prev) return prev;
+                    const nextConstraints = prev.constraints ? [...prev.constraints] : [];
+                    nextConstraints.push({
+                      constraint_type: 'other',
+                      description: '',
+                      severity: 'medium',
+                    });
+                    return { ...prev, constraints: nextConstraints };
+                  })
+                }
+              >
+                <Text style={styles.addRowButtonText}>+ Add Constraint</Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
 
@@ -882,9 +1122,61 @@ export default function IndexScreen() {
             {crs.acceptance_criteria.map((criteria, i) => (
               <View key={i} style={styles.checklistItem}>
                 <View style={styles.checkbox} />
-                <Text style={styles.checklistText}>{criteria.criterion}</Text>
+                {isEditingCRS ? (
+                  <View style={styles.editableRow}>
+                    <TextInput
+                      style={styles.checklistInput}
+                      value={criteria.criterion}
+                      onChangeText={(text) =>
+                        setCrs(prev => {
+                          if (!prev) return prev;
+                          const updated = prev.acceptance_criteria.map((c, idx) =>
+                            idx === i ? { ...c, criterion: text } : c
+                          );
+                          return { ...prev, acceptance_criteria: updated };
+                        })
+                      }
+                      placeholder="Acceptance criterion"
+                      placeholderTextColor={LightTheme.textTertiary}
+                      multiline
+                    />
+                    <TouchableOpacity
+                      style={styles.removePill}
+                      onPress={() =>
+                        setCrs(prev => {
+                          if (!prev) return prev;
+                          const updated = prev.acceptance_criteria.filter((_, idx) => idx !== i);
+                          return { ...prev, acceptance_criteria: updated };
+                        })
+                      }
+                    >
+                      <Text style={styles.removePillText}>Remove</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <Text style={styles.checklistText}>{criteria.criterion}</Text>
+                )}
               </View>
             ))}
+            {isEditingCRS && (
+              <TouchableOpacity
+                style={styles.addRowButton}
+                onPress={() =>
+                  setCrs(prev => {
+                    if (!prev) return prev;
+                    const nextCriteria = prev.acceptance_criteria ? [...prev.acceptance_criteria] : [];
+                    nextCriteria.push({
+                      criterion: '',
+                      testable: true,
+                      priority: 'medium',
+                    });
+                    return { ...prev, acceptance_criteria: nextCriteria };
+                  })
+                }
+              >
+                <Text style={styles.addRowButtonText}>+ Add Acceptance Criterion</Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
       </View>
@@ -949,90 +1241,360 @@ export default function IndexScreen() {
   );
 
   const renderPlanStep = () => (
-    <ScrollView style={styles.resultContainer} showsVerticalScrollIndicator={false}>
-      <View style={styles.resultHeader}>
-        <View>
-          <Text style={styles.resultTitle}>Implementation</Text>
-          <Text style={styles.resultSubtitle}>Your execution plan</Text>
+    <View style={styles.planScreen}>
+      <View style={styles.planHeaderWrapper}>
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.greeting}>{greeting.line1}</Text>
+            <Text style={styles.greetingAccent}>{greeting.line2}</Text>
+          </View>
+          <TouchableOpacity 
+            style={styles.profileButton}
+            onPress={() => router.push('/welcome')}
+          >
+            <Text style={styles.profileButtonText}>CV</Text>
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity style={styles.resetButton} onPress={handleReset}>
-          <Text style={styles.resetButtonText}>Start Over</Text>
-        </TouchableOpacity>
       </View>
-
-      {planModelUsed === 'fallback' && (
-        <View style={styles.warningBanner}>
-          <Text style={styles.warningIcon}>⚠️</Text>
-          <Text style={styles.warningText}>Showing fallback plan. Configure API key for detailed plans.</Text>
-        </View>
-      )}
-
-      <View style={styles.planCard}>
-        <Text style={styles.planTitle}>{plan?.title}</Text>
-        <Text style={styles.planSummary}>{plan?.summary}</Text>
-        
-        <View style={styles.statsRow}>
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{plan?.estimated_total_time}</Text>
-            <Text style={styles.statLabel}>Time</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{plan?.complexity_score}/10</Text>
-            <Text style={styles.statLabel}>Complexity</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{Math.round((plan?.confidence_score || 0) * 100)}%</Text>
-            <Text style={styles.statLabel}>Confidence</Text>
+      <ScrollView style={styles.resultContainer} showsVerticalScrollIndicator={false} contentContainerStyle={styles.planScrollContent}>
+        <View style={styles.resultHeader}>
+          <View style={styles.resultHeaderTitle}>
+            <Text style={styles.resultTitle}>Implementation</Text>
+            <Text style={styles.resultSubtitle}>Review and refine your execution plan</Text>
           </View>
         </View>
 
-        <View style={styles.planSection}>
-          <Text style={styles.planSectionTitle}>Steps</Text>
-          {plan?.steps.map((step) => (
-            <View key={step.step_number} style={styles.stepCard}>
-              <View style={styles.stepNumber}>
-                <Text style={styles.stepNumberText}>{step.step_number}</Text>
-              </View>
-              <View style={styles.stepContent}>
-                <Text style={styles.stepTitle}>{step.title}</Text>
-                <Text style={styles.stepDescription}>{step.description}</Text>
-                <Text style={styles.stepMeta}>{step.step_type} • {step.estimated_time}</Text>
-              </View>
-            </View>
-          ))}
+        <View style={styles.inlineActionRow}>
+          <TouchableOpacity
+            style={styles.editButton}
+            onPress={() => setIsEditingPlan(prev => !prev)}
+          >
+            <Text style={styles.editButtonText}>{isEditingPlan ? 'Done Editing' : 'Edit Plan'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.resetButton} onPress={handleReset}>
+            <Text style={styles.resetButtonText}>Start Over</Text>
+          </TouchableOpacity>
         </View>
 
-        <View style={styles.planSection}>
-          <Text style={styles.planSectionTitle}>Files to Change</Text>
-          {plan?.files_to_change.map((file, i) => (
-            <View key={i} style={styles.fileCard}>
-              <Text style={styles.filePath}>{file.path}</Text>
-              <View style={styles.fileIntentBadge}>
-                <Text style={styles.fileIntentText}>{file.intent}</Text>
-              </View>
-              <Text style={styles.fileRationale}>{file.rationale}</Text>
-            </View>
-          ))}
-        </View>
-
-        {/* Progress tracker */}
-        {jobProgress && (
-          <View style={styles.jobProgressContainer}>
-            <View style={styles.jobProgressHeader}>
-              <Text style={styles.jobProgressMessage}>{jobProgress.message}</Text>
-              <Text style={styles.jobProgressPercentage}>{jobProgress.percentage}%</Text>
-            </View>
-            <View style={styles.jobProgressBarBg}>
-              <View style={[styles.jobProgressBar, { width: `${jobProgress.percentage}%` }]} />
-            </View>
-            {jobId && (
-              <Text style={styles.jobProgressId}>Job: {jobId.slice(0, 8)}...</Text>
-            )}
+        {planModelUsed === 'fallback' && (
+          <View style={styles.warningBanner}>
+            <Text style={styles.warningIcon}>⚠️</Text>
+            <Text style={styles.warningText}>Showing fallback plan. Configure API key for detailed plans.</Text>
           </View>
         )}
 
+        <View style={styles.planCard}>
+          {isEditingPlan ? (
+            <>
+              <TextInput
+                style={styles.planTitleInput}
+                value={plan?.title || ''}
+                onChangeText={(text) =>
+                  setPlan(prev => prev ? { ...prev, title: text } : prev)
+                }
+                placeholder="Plan title"
+                placeholderTextColor={LightTheme.textTertiary}
+              />
+              <TextInput
+                style={styles.planSummaryInput}
+                value={plan?.summary || ''}
+                onChangeText={(text) =>
+                  setPlan(prev => prev ? { ...prev, summary: text } : prev)
+                }
+                placeholder="Plan summary"
+                placeholderTextColor={LightTheme.textTertiary}
+                multiline
+              />
+            </>
+          ) : (
+            <>
+              <Text style={styles.planTitle}>{plan?.title}</Text>
+              <Text style={styles.planSummary}>{plan?.summary}</Text>
+            </>
+          )}
+          
+          <View style={styles.statsRow}>
+            <View style={styles.statItem}>
+              {isEditingPlan ? (
+                <TextInput
+                  style={styles.statInput}
+                  value={plan?.estimated_total_time || ''}
+                  onChangeText={(text) =>
+                    setPlan(prev => prev ? { ...prev, estimated_total_time: text } : prev)
+                  }
+                  placeholder="Total time"
+                  placeholderTextColor={LightTheme.textTertiary}
+                />
+              ) : (
+                <>
+                  <Text style={styles.statValue}>{plan?.estimated_total_time}</Text>
+                  <Text style={styles.statLabel}>Time</Text>
+                </>
+              )}
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              {isEditingPlan ? (
+                <TextInput
+                  style={styles.statInput}
+                  value={String(plan?.complexity_score ?? '')}
+                  onChangeText={(text) =>
+                    setPlan(prev => prev ? { ...prev, complexity_score: Number(text) || 0 } : prev)
+                  }
+                  placeholder="Complexity (0-10)"
+                  placeholderTextColor={LightTheme.textTertiary}
+                  keyboardType="numeric"
+                />
+              ) : (
+                <>
+                  <Text style={styles.statValue}>{plan?.complexity_score}/10</Text>
+                  <Text style={styles.statLabel}>Complexity</Text>
+                </>
+              )}
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>{Math.round((plan?.confidence_score || 0) * 100)}%</Text>
+              <Text style={styles.statLabel}>Confidence</Text>
+            </View>
+          </View>
+
+          <View style={styles.planSection}>
+            <Text style={styles.planSectionTitle}>Steps</Text>
+            {plan?.steps.map((step, index) => (
+              <View key={step.step_number} style={styles.stepCard}>
+                <View style={styles.stepNumber}>
+                  <Text style={styles.stepNumberText}>{step.step_number}</Text>
+                </View>
+                <View style={styles.stepContent}>
+                  {isEditingPlan ? (
+                    <>
+                      <TextInput
+                        style={styles.stepTitleInput}
+                        value={step.title}
+                        onChangeText={(text) =>
+                          setPlan(prev => {
+                            if (!prev) return prev;
+                            const updated = prev.steps.map((s, idx) =>
+                              idx === index ? { ...s, title: text } : s
+                            );
+                            return { ...prev, steps: updated };
+                          })
+                        }
+                        placeholder="Step title"
+                        placeholderTextColor={LightTheme.textTertiary}
+                      />
+                      <TextInput
+                        style={styles.stepDescriptionInput}
+                        value={step.description}
+                        onChangeText={(text) =>
+                          setPlan(prev => {
+                            if (!prev) return prev;
+                            const updated = prev.steps.map((s, idx) =>
+                              idx === index ? { ...s, description: text } : s
+                            );
+                            return { ...prev, steps: updated };
+                          })
+                        }
+                        placeholder="Step description"
+                        placeholderTextColor={LightTheme.textTertiary}
+                        multiline
+                      />
+                      <TextInput
+                        style={styles.stepMetaInput}
+                        value={`${step.step_type} • ${step.estimated_time}`}
+                        editable={false}
+                      />
+                      <TouchableOpacity
+                        style={styles.removePill}
+                        onPress={() =>
+                          setPlan(prev => {
+                            if (!prev) return prev;
+                            const updated = prev.steps.filter((_, idx) => idx !== index);
+                            const reNumbered = updated.map((s, idx) => ({
+                              ...s,
+                              step_number: idx + 1,
+                            }));
+                            return { ...prev, steps: reNumbered };
+                          })
+                        }
+                      >
+                        <Text style={styles.removePillText}>Remove Step</Text>
+                      </TouchableOpacity>
+                    </>
+                  ) : (
+                    <>
+                      <Text style={styles.stepTitle}>{step.title}</Text>
+                      <Text style={styles.stepDescription}>{step.description}</Text>
+                      <Text style={styles.stepMeta}>{step.step_type} • {step.estimated_time}</Text>
+                    </>
+                  )}
+                </View>
+              </View>
+            ))}
+            {isEditingPlan && (
+              <TouchableOpacity
+                style={styles.addRowButton}
+                onPress={() =>
+                  setPlan(prev => {
+                    if (!prev) return prev;
+                    const nextSteps = prev.steps ? [...prev.steps] : [];
+                    const nextNumber = nextSteps.length + 1;
+                    nextSteps.push({
+                      step_number: nextNumber,
+                      title: `Step ${nextNumber}`,
+                      description: '',
+                      step_type: 'implementation',
+                      estimated_time: '30 minutes',
+                      dependencies: [],
+                      reversible: true,
+                    });
+                    return { ...prev, steps: nextSteps };
+                  })
+                }
+              >
+                <Text style={styles.addRowButtonText}>+ Add Step</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          <View style={styles.planSection}>
+            <Text style={styles.planSectionTitle}>Files to Change</Text>
+            {plan?.files_to_change.map((file, index) => (
+              <View key={index} style={styles.fileCard}>
+                {isEditingPlan ? (
+                  <>
+                    <TextInput
+                      style={styles.filePathInput}
+                      value={file.path}
+                      onChangeText={(text) =>
+                        setPlan(prev => {
+                          if (!prev) return prev;
+                          const updated = prev.files_to_change.map((f, idx) =>
+                            idx === index ? { ...f, path: text } : f
+                          );
+                          return { ...prev, files_to_change: updated };
+                        })
+                      }
+                      placeholder="File path"
+                      placeholderTextColor={LightTheme.textTertiary}
+                    />
+                    <TextInput
+                      style={styles.fileIntentInput}
+                      value={file.intent}
+                      onChangeText={(text) =>
+                        setPlan(prev => {
+                          if (!prev) return prev;
+                          const updated = prev.files_to_change.map((f, idx) =>
+                            idx === index ? { ...f, intent: text } : f
+                          );
+                          return { ...prev, files_to_change: updated };
+                        })
+                      }
+                      placeholder="Intent (create/modify/delete)"
+                      placeholderTextColor={LightTheme.textTertiary}
+                    />
+                    <TextInput
+                      style={styles.fileRationaleInput}
+                      value={file.rationale}
+                      onChangeText={(text) =>
+                        setPlan(prev => {
+                          if (!prev) return prev;
+                          const updated = prev.files_to_change.map((f, idx) =>
+                            idx === index ? { ...f, rationale: text } : f
+                          );
+                          return { ...prev, files_to_change: updated };
+                        })
+                      }
+                      placeholder="Rationale"
+                      placeholderTextColor={LightTheme.textTertiary}
+                      multiline
+                    />
+                    <TouchableOpacity
+                      style={styles.removePill}
+                      onPress={() =>
+                        setPlan(prev => {
+                          if (!prev) return prev;
+                          const updated = prev.files_to_change.filter((_, idx) => idx !== index);
+                          // Recalculate priorities to ensure they're sequential
+                          const rePrioritized = updated.map((f, idx) => ({
+                            ...f,
+                            priority: idx + 1,
+                          }));
+                          return { ...prev, files_to_change: rePrioritized };
+                        })
+                      }
+                    >
+                      <Text style={styles.removePillText}>Remove File</Text>
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.filePath}>{file.path}</Text>
+                    <View style={styles.fileIntentBadge}>
+                      <Text style={styles.fileIntentText}>{file.intent}</Text>
+                    </View>
+                    <Text style={styles.fileRationale}>{file.rationale}</Text>
+                  </>
+                )}
+              </View>
+            ))}
+            {isEditingPlan && (
+              <TouchableOpacity
+                style={styles.addRowButton}
+                onPress={() => {
+                  if (repoMode === 'existing' && selectedRepo) {
+                    setShowPlanFilePicker(true);
+                    setSelectedPlanFiles({});
+                    setPlanPathHistory([]);
+                    setPlanFileSearch('');
+                    fetchPlanFileTree('');
+                  } else {
+                    // For new repos (no GitHub tree yet), fall back to manual entry
+                    setPlan(prev => {
+                      if (!prev) return prev;
+                      const nextFiles = prev.files_to_change ? [...prev.files_to_change] : [];
+                      nextFiles.push({
+                        path: '',
+                        intent: 'modify',
+                        rationale: '',
+                        priority: nextFiles.length + 1,
+                      });
+                      return { ...prev, files_to_change: nextFiles };
+                    });
+                  }
+                }}
+              >
+                <Text style={styles.addRowButtonText}>+ Add File</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Progress tracker */}
+          {jobProgress && (
+            <View style={styles.jobProgressContainer}>
+              <View style={styles.jobProgressHeader}>
+                <Text style={styles.jobProgressMessage}>{jobProgress.message}</Text>
+                <Text style={styles.jobProgressPercentage}>{jobProgress.percentage}%</Text>
+              </View>
+              <View style={styles.jobProgressBarBg}>
+                <View style={[styles.jobProgressBar, { width: `${jobProgress.percentage}%` }]} />
+              </View>
+              {jobId && (
+                <Text style={styles.jobProgressId}>Job: {jobId.slice(0, 8)}...</Text>
+              )}
+            </View>
+          )}
+
+          {confirmVisible && (
+            <View style={styles.successBanner}>
+              <Text style={styles.successText}>✅ Code changes pushed to GitHub!</Text>
+            </View>
+          )}
+        </View>
+      </ScrollView>
+
+      <View style={styles.stickyActionContainer}>
         <View style={styles.actionButtons}>
           <TouchableOpacity
             style={[styles.executeButton, creatingPR && styles.buttonDisabled]}
@@ -1061,14 +1623,8 @@ export default function IndexScreen() {
             <Text style={styles.declineButtonText}>Decline</Text>
           </TouchableOpacity>
         </View>
-
-        {confirmVisible && (
-          <View style={styles.successBanner}>
-            <Text style={styles.successText}>✅ Code changes pushed to GitHub!</Text>
-          </View>
-        )}
       </View>
-    </ScrollView>
+    </View>
   );
 
   return (
@@ -1077,29 +1633,115 @@ export default function IndexScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
     >
-      <ScrollView 
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.greeting}>{greeting.line1}</Text>
-            <Text style={styles.greetingAccent}>{greeting.line2}</Text>
-          </View>
-          <TouchableOpacity 
-            style={styles.profileButton}
-            onPress={() => router.push('/welcome')}
+      {currentStep === 'plan' ? (
+        // Plan step has its own layout with sticky buttons - render outside outer ScrollView
+        renderPlanStep()
+      ) : (
+        // Other steps render inside the outer ScrollView
+        <View style={styles.scrollOuter}>
+          <ScrollView 
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
           >
-            <Text style={styles.profileButtonText}>CV</Text>
-          </TouchableOpacity>
-        </View>
+            <View style={styles.header}>
+              <View>
+                <Text style={styles.greeting}>{greeting.line1}</Text>
+                <Text style={styles.greetingAccent}>{greeting.line2}</Text>
+              </View>
+              <TouchableOpacity 
+                style={styles.profileButton}
+                onPress={() => router.push('/welcome')}
+              >
+                <Text style={styles.profileButtonText}>CV</Text>
+              </TouchableOpacity>
+            </View>
 
-        {currentStep === 'input' && renderInputStep()}
-        {currentStep === 'clarify' && renderClarifyStep()}
-        {currentStep === 'crs' && renderCRSStep()}
-        {currentStep === 'plan' && renderPlanStep()}
-      </ScrollView>
+            {currentStep === 'input' && renderInputStep()}
+            {currentStep === 'clarify' && renderClarifyStep()}
+            {currentStep === 'crs' && renderCRSStep()}
+          </ScrollView>
+        </View>
+      )}
+
+      {/* Plan file picker overlay - rendered outside ScrollView for proper absolute positioning */}
+      {currentStep === 'plan' && showPlanFilePicker && selectedRepo && (
+        <View style={styles.planFilePickerOverlay}>
+          <View style={styles.planFilePickerCard}>
+            <View style={styles.planFilePickerHeader}>
+              <TouchableOpacity onPress={handleBackInPlanFileTree} style={styles.planFilePickerBackButton}>
+                <Text style={styles.planFilePickerBackText}>← Back</Text>
+              </TouchableOpacity>
+              <Text style={styles.planFilePickerPath} numberOfLines={1}>
+                {planCurrentPath || selectedRepo.full_name}
+              </Text>
+              <TouchableOpacity onPress={() => {
+                setShowPlanFilePicker(false);
+                setPlanFileSearch('');
+              }} style={styles.planFilePickerCloseButton}>
+                <Text style={styles.planFilePickerCloseText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.planFilePickerSearchRow}>
+              <TextInput
+                style={styles.planFilePickerSearchInput}
+                placeholder="Search files..."
+                placeholderTextColor={LightTheme.textTertiary}
+                value={planFileSearch}
+                onChangeText={setPlanFileSearch}
+              />
+            </View>
+
+            {loadingPlanFiles ? (
+              <View style={styles.planFilePickerLoading}>
+                <ActivityIndicator size="small" color={Accent.primary} />
+              </View>
+            ) : (
+              <FlatList
+                data={planFileTree.filter(item =>
+                  !planFileSearch.trim()
+                    ? true
+                    : item.path.toLowerCase().includes(planFileSearch.trim().toLowerCase())
+                )}
+                keyExtractor={(item) => item.path}
+                renderItem={({ item }) => {
+                  const checked = !!selectedPlanFiles[item.path];
+                  return (
+                    <TouchableOpacity
+                      style={styles.planFilePickerItem}
+                      onPress={() => handlePlanFileItemPress(item)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.planFilePickerIcon}>
+                        {item.type === 'dir' ? '📁' : '📄'}
+                      </Text>
+                      <Text style={styles.planFilePickerName} numberOfLines={1}>
+                        {item.name}
+                      </Text>
+                      {item.type === 'file' && (
+                        <View style={[styles.planFilePickerCheckbox, checked && styles.planFilePickerCheckboxChecked]}>
+                          {checked && <Text style={styles.planFilePickerCheckboxMark}>✓</Text>}
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  );
+                }}
+                style={styles.planFilePickerList}
+              />
+            )}
+
+            <TouchableOpacity
+              style={[styles.primaryButton, (!Object.keys(selectedPlanFiles).length) && styles.buttonDisabled]}
+              onPress={handleConfirmPlanFileSelection}
+              disabled={!Object.keys(selectedPlanFiles).length}
+              activeOpacity={0.9}
+            >
+              <Text style={styles.primaryButtonText}>Add Selected Files</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
     </KeyboardAvoidingView>
   );
 }
@@ -1114,6 +1756,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.xxl + Spacing.lg,
     paddingBottom: Spacing.xl,
+  },
+  scrollOuter: {
+    flex: 1,
   },
   header: {
     flexDirection: 'row',
@@ -1328,8 +1973,23 @@ const styles = StyleSheet.create({
   resultHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     marginBottom: Spacing.lg,
+  },
+  resultHeaderTitle: {
+    flex: 1,
+  },
+  resultHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  inlineActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    marginBottom: Spacing.md,
+    gap: Spacing.sm,
   },
   resultTitle: {
     ...Typography.h1,
@@ -1342,13 +2002,24 @@ const styles = StyleSheet.create({
   },
   resetButton: {
     backgroundColor: LightTheme.backgroundSecondary,
-    paddingHorizontal: Spacing.md,
+    paddingHorizontal: Spacing.sm + 2,
     paddingVertical: Spacing.sm,
     borderRadius: Radius.sm,
   },
   resetButtonText: {
     ...Typography.labelMedium,
     color: LightTheme.textSecondary,
+  },
+  editButton: {
+    backgroundColor: LightTheme.backgroundSecondary,
+    paddingHorizontal: Spacing.sm + 2,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.sm,
+    marginRight: Spacing.sm,
+  },
+  editButtonText: {
+    ...Typography.labelMedium,
+    color: Accent.primary,
   },
   specCard: {
     backgroundColor: LightTheme.surface,
@@ -1367,6 +2038,26 @@ const styles = StyleSheet.create({
     color: LightTheme.textSecondary,
     marginBottom: Spacing.md,
     lineHeight: 24,
+  },
+  specGoalInput: {
+    ...Typography.h2,
+    color: LightTheme.text,
+    marginBottom: Spacing.sm,
+  },
+  specSummaryInput: {
+    ...Typography.bodyLarge,
+    color: LightTheme.text,
+    marginBottom: Spacing.md,
+    lineHeight: 24,
+  },
+  metaInput: {
+    backgroundColor: LightTheme.backgroundSecondary,
+    borderRadius: Radius.sm,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    ...Typography.labelSmall,
+    color: LightTheme.text,
+    minWidth: 80,
   },
   metaRow: {
     flexDirection: 'row',
@@ -1420,6 +2111,12 @@ const styles = StyleSheet.create({
     color: LightTheme.textSecondary,
     lineHeight: 22,
   },
+  listItemInput: {
+    flex: 1,
+    ...Typography.bodyMedium,
+    color: LightTheme.text,
+    lineHeight: 22,
+  },
   checklistItem: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -1439,6 +2136,34 @@ const styles = StyleSheet.create({
     ...Typography.bodyMedium,
     color: LightTheme.text,
     lineHeight: 22,
+  },
+  checklistInput: {
+    flex: 1,
+    ...Typography.bodyMedium,
+    color: LightTheme.text,
+    lineHeight: 22,
+  },
+  editableRow: {
+    flex: 1,
+  },
+  addRowButton: {
+    marginTop: Spacing.sm,
+  },
+  addRowButtonText: {
+    ...Typography.labelMedium,
+    color: Accent.primary,
+  },
+  removePill: {
+    alignSelf: 'flex-start',
+    marginTop: Spacing.xs,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 2,
+    borderRadius: Radius.sm,
+    backgroundColor: LightTheme.backgroundTertiary,
+  },
+  removePillText: {
+    ...Typography.labelSmall,
+    color: LightTheme.textSecondary,
   },
   questionBlock: {
     marginTop: Spacing.md,
@@ -1493,6 +2218,17 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.lg,
     lineHeight: 24,
   },
+  planTitleInput: {
+    ...Typography.h2,
+    color: LightTheme.text,
+    marginBottom: Spacing.sm,
+  },
+  planSummaryInput: {
+    ...Typography.bodyLarge,
+    color: LightTheme.text,
+    marginBottom: Spacing.lg,
+    lineHeight: 24,
+  },
   statsRow: {
     flexDirection: 'row',
     backgroundColor: LightTheme.backgroundSecondary,
@@ -1513,6 +2249,16 @@ const styles = StyleSheet.create({
     ...Typography.labelSmall,
     color: LightTheme.textTertiary,
     marginTop: 2,
+  },
+  statInput: {
+    ...Typography.bodyMedium,
+    color: LightTheme.text,
+    textAlign: 'center',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    backgroundColor: LightTheme.backgroundSecondary,
+    borderRadius: Radius.sm,
+    minWidth: 80,
   },
   statDivider: {
     width: 1,
@@ -1556,11 +2302,26 @@ const styles = StyleSheet.create({
     color: LightTheme.text,
     marginBottom: 4,
   },
+  stepTitleInput: {
+    ...Typography.labelLarge,
+    color: LightTheme.text,
+    marginBottom: 4,
+  },
   stepDescription: {
     ...Typography.bodySmall,
     color: LightTheme.textSecondary,
     marginBottom: 4,
     lineHeight: 18,
+  },
+  stepDescriptionInput: {
+    ...Typography.bodySmall,
+    color: LightTheme.text,
+    marginBottom: 4,
+    lineHeight: 18,
+  },
+  stepMetaInput: {
+    ...Typography.labelSmall,
+    color: LightTheme.textTertiary,
   },
   stepMeta: {
     ...Typography.labelSmall,
@@ -1573,6 +2334,12 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
   },
   filePath: {
+    ...Typography.labelMedium,
+    color: LightTheme.text,
+    fontFamily: 'monospace',
+    marginBottom: Spacing.xs,
+  },
+  filePathInput: {
     ...Typography.labelMedium,
     color: LightTheme.text,
     fontFamily: 'monospace',
@@ -1595,6 +2362,116 @@ const styles = StyleSheet.create({
     ...Typography.bodySmall,
     color: LightTheme.textSecondary,
     lineHeight: 18,
+  },
+  fileIntentInput: {
+    ...Typography.labelSmall,
+    color: LightTheme.text,
+    marginBottom: Spacing.xs,
+  },
+  fileRationaleInput: {
+    ...Typography.bodySmall,
+    color: LightTheme.text,
+    lineHeight: 18,
+  },
+  planFilePickerOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+    justifyContent: 'flex-end',
+  },
+  planFilePickerCard: {
+    backgroundColor: LightTheme.surface,
+    borderTopLeftRadius: Radius.lg,
+    borderTopRightRadius: Radius.lg,
+    padding: Spacing.md,
+    maxHeight: 420,
+    ...Shadows.light.md,
+  },
+  planFilePickerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: LightTheme.borderLight,
+    paddingBottom: Spacing.sm,
+    marginBottom: Spacing.sm,
+  },
+  planFilePickerBackButton: {
+    paddingHorizontal: Spacing.sm,
+  },
+  planFilePickerBackText: {
+    ...Typography.labelMedium,
+    color: Accent.primary,
+  },
+  planFilePickerPath: {
+    flex: 1,
+    ...Typography.bodySmall,
+    color: LightTheme.textSecondary,
+    textAlign: 'center',
+    marginHorizontal: Spacing.sm,
+  },
+  planFilePickerCloseButton: {
+    paddingHorizontal: Spacing.sm,
+  },
+  planFilePickerCloseText: {
+    fontSize: 18,
+    color: LightTheme.textTertiary,
+  },
+  planFilePickerSearchRow: {
+    marginBottom: Spacing.sm,
+  },
+  planFilePickerSearchInput: {
+    backgroundColor: LightTheme.backgroundSecondary,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    ...Typography.bodySmall,
+    color: LightTheme.text,
+  },
+  planFilePickerLoading: {
+    padding: Spacing.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  planFilePickerList: {
+    maxHeight: 260,
+    marginBottom: Spacing.md,
+  },
+  planFilePickerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: LightTheme.borderLight,
+  },
+  planFilePickerIcon: {
+    fontSize: 18,
+    marginRight: Spacing.sm,
+  },
+  planFilePickerName: {
+    flex: 1,
+    ...Typography.bodySmall,
+    color: LightTheme.text,
+  },
+  planFilePickerCheckbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: LightTheme.border,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  planFilePickerCheckboxChecked: {
+    backgroundColor: Accent.primary,
+    borderColor: Accent.primary,
+  },
+  planFilePickerCheckboxMark: {
+    ...Typography.labelSmall,
+    color: '#FFFFFF',
+    fontWeight: '700',
   },
   jobProgressContainer: {
     backgroundColor: Accent.primary + '10',
@@ -1636,6 +2513,23 @@ const styles = StyleSheet.create({
     ...Typography.labelSmall,
     color: LightTheme.textTertiary,
     fontFamily: 'monospace',
+  },
+  planScreen: {
+    flex: 1,
+  },
+  planHeaderWrapper: {
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.xxl + Spacing.lg,
+  },
+  planScrollContent: {
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.xl,
+  },
+  stickyActionContainer: {
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.lg,
+    paddingTop: Spacing.sm,
+    backgroundColor: LightTheme.background,
   },
   actionButtons: {
     flexDirection: 'row',
