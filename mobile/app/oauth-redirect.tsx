@@ -3,6 +3,7 @@ import { Text, View, ActivityIndicator, Alert } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { makeRedirectUri } from 'expo-auth-session';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Linking from 'expo-linking';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://cloud-vibecoder-1.onrender.com';
 
@@ -12,7 +13,37 @@ export default function OAuthRedirect() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const exchangeCodeForToken = async () => {
+    const handleOAuth = async () => {
+      // Handle new flow: mobile://oauth-success (from backend redirect)
+      const initialUrl = await Linking.getInitialURL();
+      if (initialUrl && initialUrl.includes('mobile://oauth-success')) {
+        const parsed = Linking.parse(initialUrl);
+        const token = parsed.queryParams?.token as string;
+        const userParam = parsed.queryParams?.user as string;
+        
+        if (token) {
+          try {
+            await AsyncStorage.setItem('github_access_token', token);
+            if (userParam) {
+              const user = JSON.parse(decodeURIComponent(userParam));
+              await AsyncStorage.setItem('github_user', JSON.stringify(user));
+              console.log('[OAuth] Stored user:', user.login);
+            }
+            console.log('[OAuth] Token and user data stored via deep link');
+            router.replace('/(tabs)');
+            return;
+          } catch (e) {
+            console.error('[OAuth] Error storing credentials:', e);
+            setError('Failed to store credentials');
+            Alert.alert('Authentication Failed', 'Could not store credentials. Please try again.', [
+              { text: 'OK', onPress: () => router.replace('/login') },
+            ]);
+            return;
+          }
+        }
+      }
+      
+      // Handle old flow: exp:// (existing functionality for backward compatibility)
       console.log('[OAuth Redirect] Received params:', params);
       
       if (params.code) {
@@ -80,7 +111,39 @@ export default function OAuthRedirect() {
       }
     };
 
-    exchangeCodeForToken();
+    handleOAuth();
+    
+    // Listen for deep links while app is open (for new flow)
+    const subscription = Linking.addEventListener('url', (event) => {
+      if (event.url.includes('mobile://oauth-success')) {
+        const parsed = Linking.parse(event.url);
+        const token = parsed.queryParams?.token as string;
+        const userParam = parsed.queryParams?.user as string;
+        
+        if (token) {
+          AsyncStorage.setItem('github_access_token', token).then(() => {
+            if (userParam) {
+              const user = JSON.parse(decodeURIComponent(userParam));
+              AsyncStorage.setItem('github_user', JSON.stringify(user));
+            }
+            router.replace('/(tabs)');
+          }).catch((e) => {
+            console.error('[OAuth] Error storing credentials:', e);
+            Alert.alert('Error', 'Failed to store credentials');
+            router.replace('/login');
+          });
+        }
+      } else if (event.url.includes('mobile://oauth-error')) {
+        const parsed = Linking.parse(event.url);
+        const error = parsed.queryParams?.error as string;
+        Alert.alert('GitHub Login Failed', error || 'Authentication failed');
+        router.replace('/login');
+      }
+    });
+    
+    return () => {
+      subscription.remove();
+    };
   }, [params.code, params.error, router]);
 
   return (
