@@ -24,6 +24,13 @@ class Settings(BaseSettings):
     # VM Infrastructure Configuration (Phase 1)
     e2b_api_key: Optional[str] = None
     vm_timeout_seconds: int = 600  # 10 minutes default
+    
+    # Supabase Configuration
+    supabase_url: Optional[str] = None
+    supabase_key: Optional[str] = None
+    
+    # Admin Configuration
+    admin_secret_key: str = "change-this-in-production"
 
     class Config:
         env_file = str(ENV_FILE)

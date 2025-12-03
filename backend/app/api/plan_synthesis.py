@@ -1,9 +1,17 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from typing import Optional
 from app.models.plan_model import PlanRequest, PlanResponse
 from app.services.plan_synthesis_service import PlanSynthesisService
 from app.services.repo_structure_service import get_repo_structure
 import logging
+
+# Import database service for metrics tracking (optional)
+try:
+    from app.models.database import get_db_service, PlanRecordCreate, SUPABASE_KEY
+    DB_AVAILABLE = bool(SUPABASE_KEY)
+except ImportError:
+    DB_AVAILABLE = False
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -15,6 +23,7 @@ class PlanGenerationRequest(BaseModel):
     scope_preferences: list = None
     is_new_repo: bool = False  # True when creating a new repository from scratch
     project_type: str | None = None  # e.g., 'react', 'node', 'python', 'fastapi'
+    user_id: Optional[int] = None  # Database user ID for tracking
 
 @router.post("/plan-synthesis", response_model=PlanResponse)
 async def generate_implementation_plan(request: PlanGenerationRequest):
@@ -57,6 +66,26 @@ async def generate_implementation_plan(request: PlanGenerationRequest):
         response = await synthesis_service.generate_plan(plan_request)
         
         logger.info(f"Plan generated successfully for CRS: {request.crs.get('goal', 'Unknown')[:50]}...")
+        
+        # Track plan in database (optional)
+        if DB_AVAILABLE:
+            try:
+                db = get_db_service()
+                await db.create_plan_record(PlanRecordCreate(
+                    user_id=request.user_id,
+                    plan_title=response.plan.title[:255] if response.plan.title else "Untitled Plan",
+                    complexity_score=response.plan.complexity_score,
+                    confidence_score=response.plan.confidence_score,
+                    steps_count=len(response.plan.steps),
+                    files_to_change_count=len(response.plan.files_to_change),
+                    processing_time_ms=response.processing_time_ms,
+                    model_used=response.model_used,
+                    tokens_used=response.tokens_used
+                ))
+                logger.info(f"Plan tracked in database for user_id: {request.user_id}")
+            except Exception as e:
+                logger.warning(f"Failed to track plan in database: {e}")
+        
         return response
         
     except Exception as e:

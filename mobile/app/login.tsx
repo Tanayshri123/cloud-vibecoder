@@ -190,7 +190,10 @@ export default function LoginScreen() {
 
       await AsyncStorage.setItem('github_access_token', payload.access_token);
       await AsyncStorage.setItem('github_user', JSON.stringify(payload.user));
-      console.log('[GitHub OAuth] Token and user data stored');
+      if (payload.db_user_id) {
+        await AsyncStorage.setItem('db_user_id', String(payload.db_user_id));
+      }
+      console.log('[GitHub OAuth] Token and user data stored, db_user_id:', payload.db_user_id);
 
       Alert.alert('Success', `Signed in as ${userName}`, [
         {
