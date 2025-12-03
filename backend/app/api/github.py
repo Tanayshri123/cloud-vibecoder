@@ -7,6 +7,13 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 import logging
 
+# Import database service for metrics tracking (optional)
+try:
+    from app.models.database import get_db_service, PRRecordCreate, SUPABASE_KEY
+    DB_AVAILABLE = bool(SUPABASE_KEY)
+except ImportError:
+    DB_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
@@ -24,6 +31,8 @@ class CreatePRRequest(BaseModel):
     head_branch: str = Field(description="Source branch with changes")
     base_branch: str = Field(default="main", description="Target branch (default: main)")
     github_token: str = Field(description="GitHub personal access token")
+    user_id: Optional[int] = Field(default=None, description="Database user ID for tracking")
+    job_id: Optional[str] = Field(default=None, description="Associated job ID for tracking")
 
 
 class GetCommitsRequest(BaseModel):
@@ -103,6 +112,27 @@ async def create_pull_request(request: CreatePRRequest):
         pr = await github_service.create_pull_request(pr_request)
         
         logger.info(f"API: PR created successfully: #{pr.number}")
+        
+        # Track PR in database (optional)
+        if DB_AVAILABLE:
+            try:
+                db = get_db_service()
+                await db.create_pr_record(PRRecordCreate(
+                    user_id=request.user_id,
+                    job_id=request.job_id,
+                    pr_number=pr.number,
+                    repo_owner=request.repo_owner,
+                    repo_name=request.repo_name,
+                    title=pr.title[:255] if pr.title else "Untitled PR",
+                    html_url=pr.html_url,
+                    state=pr.state,
+                    head_branch=pr.head_branch,
+                    base_branch=pr.base_branch
+                ))
+                logger.info(f"PR tracked in database for user_id: {request.user_id}")
+            except Exception as e:
+                logger.warning(f"Failed to track PR in database: {e}")
+        
         return pr
         
     except Exception as e:

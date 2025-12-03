@@ -332,6 +332,39 @@ For Express API projects, include:
             # Parse JSON
             plan_data = json.loads(content)
             
+            # Validate and fix file changes
+            if 'files_to_change' in plan_data:
+                # Map of common LLM intent variations to valid enum values
+                intent_mapping = {
+                    'add': 'create',
+                    'new': 'create',
+                    'write': 'create',
+                    'update': 'modify',
+                    'edit': 'modify',
+                    'change': 'modify',
+                    'remove': 'delete',
+                    'rename': 'refactor',
+                    'restructure': 'refactor',
+                }
+                
+                for file_change in plan_data['files_to_change']:
+                    # Fix invalid intent values
+                    intent = file_change.get('intent', '').lower()
+                    if intent in intent_mapping:
+                        logger.warning(f"Mapping intent '{intent}' to '{intent_mapping[intent]}'")
+                        file_change['intent'] = intent_mapping[intent]
+                    elif intent not in ['create', 'modify', 'delete', 'refactor']:
+                        logger.warning(f"Unknown intent '{intent}', defaulting to 'create'")
+                        file_change['intent'] = 'create'
+                    
+                    # Fix file paths - ensure they are files, not directories
+                    path = file_change.get('path', '')
+                    if path.endswith('/') or (not '.' in path.split('/')[-1] and path):
+                        # Convert directory to a default file path
+                        base_path = path.rstrip('/')
+                        file_change['path'] = f"{base_path}/main.py" if base_path else "main.py"
+                        logger.warning(f"Fixed directory path '{path}' to '{file_change['path']}'")
+            
             # Convert to Pydantic model
             return ImplementationPlan(**plan_data)
             
@@ -377,9 +410,9 @@ For Express API projects, include:
             ],
             files_to_change=[
                 FileChange(
-                    path="src/components/",
-                    intent=FileIntent.MODIFY,
-                    rationale="Implementation files need to be updated",
+                    path="main.py",
+                    intent=FileIntent.CREATE,
+                    rationale="Main implementation file for the requested functionality",
                     priority=1
                 )
             ],

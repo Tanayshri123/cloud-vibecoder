@@ -3,14 +3,14 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.logging_config import setup_logging
 from app.core.config import settings
-from app.api import health, plan, crs, plan_synthesis, auth, agent_execution, github
+from app.api import health, plan, crs, plan_synthesis, auth, agent_execution, github, admin
 
 setup_logging()
 app = FastAPI(title="Cloud Vibecoder API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8081", "http://localhost:19006"],  # Expo Web default ports
+    allow_origins=["http://localhost:8081", "http://localhost:19006", "http://localhost:3000", "http://localhost:5173"],  # Expo Web + Admin dashboard ports
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -24,3 +24,4 @@ app.include_router(plan_synthesis.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
 app.include_router(agent_execution.router, prefix="/api")
 app.include_router(github.router, prefix="/api")
+app.include_router(admin.router, prefix="/api")

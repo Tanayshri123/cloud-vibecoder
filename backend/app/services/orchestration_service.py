@@ -15,6 +15,13 @@ import logging
 import uuid
 import asyncio
 
+# Import database service for metrics tracking (optional)
+try:
+    from app.models.database import get_db_service, JobRecordCreate, SUPABASE_KEY
+    DB_AVAILABLE = bool(SUPABASE_KEY)
+except ImportError:
+    DB_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -66,6 +73,22 @@ class OrchestrationService:
             logger.info(f"📋 Created job {job_id} for new repo: {request.new_repo_config.name}")
         else:
             logger.info(f"📋 Created job {job_id} for {request.repo_url}")
+        
+        # Track job in database (optional)
+        if DB_AVAILABLE:
+            try:
+                db = get_db_service()
+                await db.create_job_record(JobRecordCreate(
+                    job_id=job_id,
+                    user_id=request.user_id,
+                    repo_url=request.repo_url,
+                    branch=request.branch,
+                    created_new_repo=request.create_new_repo,
+                    status="pending"
+                ))
+                logger.info(f"Job tracked in database for user_id: {request.user_id}")
+            except Exception as e:
+                logger.warning(f"Failed to track job in database: {e}")
         
         return job
     
@@ -267,6 +290,23 @@ class OrchestrationService:
             
             job.result = result
             
+            # Update job in database (optional)
+            if DB_AVAILABLE:
+                try:
+                    db = get_db_service()
+                    await db.update_job_record(job_id, {
+                        "status": "completed",
+                        "files_changed": agent_result.total_files_changed,
+                        "commits_created": len(agent_result.commits_created),
+                        "total_edits": agent_result.total_edits,
+                        "tokens_used": agent_result.total_tokens_used,
+                        "execution_time_seconds": execution_time,
+                        "started_at": start_time,
+                        "completed_at": datetime.utcnow()
+                    })
+                except Exception as db_e:
+                    logger.warning(f"Failed to update job in database: {db_e}")
+            
             logger.info(f"🎉 Job {job_id} completed successfully!")
             logger.info(f"   Execution time: {execution_time:.1f}s")
             
@@ -315,6 +355,21 @@ class OrchestrationService:
             )
             
             job.result = result
+            
+            # Update job in database (optional)
+            if DB_AVAILABLE:
+                try:
+                    db = get_db_service()
+                    await db.update_job_record(job_id, {
+                        "status": "failed",
+                        "error_message": str(e),
+                        "error_stage": error_stage,
+                        "execution_time_seconds": execution_time,
+                        "started_at": start_time,
+                        "completed_at": datetime.utcnow()
+                    })
+                except Exception as db_e:
+                    logger.warning(f"Failed to update job in database: {db_e}")
             
             return result
             

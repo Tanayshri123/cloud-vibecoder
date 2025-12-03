@@ -276,6 +276,16 @@ class CodingAgent:
             if f.priority <= step.step_number
         ]
         
+        # Fix any directory paths - convert to actual file paths
+        for f in relevant_files:
+            path = f.path
+            # If path ends with / or has no extension, it's a directory
+            if path.endswith('/') or (path and '.' not in path.split('/')[-1]):
+                base_path = path.rstrip('/')
+                # Convert to a proper file path
+                f.path = f"{base_path}/main.py" if base_path else "main.py"
+                logger.warning(f"Fixed directory path '{path}' to '{f.path}'")
+        
         # Sort by priority
         relevant_files.sort(key=lambda f: f.priority)
         

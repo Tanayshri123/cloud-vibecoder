@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Alert, FlatList, Animated, Dimensions, KeyboardAvoidingView, Platform } from 'react-native';
 import { router } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import githubService, { type GitHubRepo } from '../../services/githubService';
 import { Accent, LightTheme, Typography, Spacing, Radius, Shadows } from '../../constants/theme';
 import RepoModeSelector, { type RepoMode } from '../../components/RepoModeSelector';
@@ -193,6 +194,7 @@ export default function IndexScreen() {
   const [creatingPR, setCreatingPR] = useState(false);
   const [jobProgress, setJobProgress] = useState<{status: string; message: string; percentage: number} | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
+  const [dbUserId, setDbUserId] = useState<number | null>(null);
 
   // Greeting
   const [greeting, setGreeting] = useState(getGreeting());
@@ -221,6 +223,13 @@ export default function IndexScreen() {
   useEffect(() => {
     const init = async () => {
       try {
+        // Load database user ID
+        const storedUserId = await AsyncStorage.getItem('db_user_id');
+        if (storedUserId) {
+          setDbUserId(parseInt(storedUserId, 10));
+          console.log('Loaded db_user_id:', storedUserId);
+        }
+        
         const authed = await githubService.isAuthenticated();
         setIsAuthed(authed);
         if (authed) {
@@ -496,7 +505,8 @@ export default function IndexScreen() {
           repo_url: repoMode === 'existing' ? repo.trim() || undefined : undefined,
           scope_preferences: repoMode === 'new' ? ['new project', 'create files'] : ['minimal changes', 'frontend only'],
           is_new_repo: repoMode === 'new',
-          project_type: repoMode === 'new' ? detectProjectType(prompt) : undefined
+          project_type: repoMode === 'new' ? detectProjectType(prompt) : undefined,
+          user_id: dbUserId
         }),
       });
       
@@ -585,7 +595,8 @@ export default function IndexScreen() {
             github_token: token,
             implementation_plan: plan,
             create_new_branch: false, // Work on default branch for new repos
-            push_changes: true
+            push_changes: true,
+            user_id: dbUserId
           }
         : {
             repo_url: selectedRepo!.html_url,
@@ -594,7 +605,8 @@ export default function IndexScreen() {
             implementation_plan: plan,
             create_new_branch: true,
             new_branch_name: branchName,
-            push_changes: true
+            push_changes: true,
+            user_id: dbUserId
           };
       
       const jobRes = await fetch(`${BASE_URL}/api/jobs/create`, {
@@ -735,7 +747,9 @@ export default function IndexScreen() {
                   repoFullName: selectedRepo!.full_name,
                   branchName: branchName,
                   defaultBranch: selectedRepo!.default_branch || 'main',
-                  prompt: prompt
+                  prompt: prompt,
+                  jobId: createdJobId,
+                  dbUserId: dbUserId ? String(dbUserId) : ''
                 });
                 router.push(`/changes?${params.toString()}` as any);
                 // Reset state after navigation

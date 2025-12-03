@@ -43,6 +43,9 @@ class JobRequest(BaseModel):
     new_branch_name: Optional[str] = Field(default=None, description="Name for new branch")
     push_changes: bool = Field(default=True, description="Push changes to remote")
     
+    # User tracking
+    user_id: Optional[int] = Field(default=None, description="Database user ID for tracking")
+    
     def model_post_init(self, __context) -> None:
         """Validate that either repo_url or new_repo_config is provided"""
         if self.create_new_repo:

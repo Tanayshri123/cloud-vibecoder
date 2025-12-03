@@ -7,6 +7,13 @@ import logging
 import urllib.parse
 import json
 
+# Import database service for user tracking (optional - fails gracefully if not configured)
+try:
+    from app.models.database import get_db_service, UserCreate, SUPABASE_KEY
+    DB_AVAILABLE = bool(SUPABASE_KEY)
+except ImportError:
+    DB_AVAILABLE = False
+
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
@@ -29,6 +36,7 @@ class GitHubExchangeResponse(BaseModel):
     token_type: str
     scope: str
     user: GitHubUser
+    db_user_id: int | None = None  # Internal database user ID for tracking
 
 
 @router.post("/auth/github/exchange", response_model=GitHubExchangeResponse)
@@ -116,11 +124,29 @@ async def exchange_github_code(payload: GitHubExchangeRequest):
     logger.info(f"GitHub authentication successful for user: {user.login}")
     logger.debug(f"Complete user profile: {user}")
 
+    # Track user in database (optional)
+    db_user_id = None
+    if DB_AVAILABLE:
+        try:
+            db = get_db_service()
+            db_user = await db.create_or_update_user(UserCreate(
+                github_id=user.id,
+                github_login=user.login,
+                github_name=user.name,
+                github_avatar_url=user.avatar_url,
+                github_email=user.email
+            ))
+            db_user_id = db_user.get('id') if db_user else None
+            logger.info(f"User {user.login} tracked in database with id: {db_user_id}")
+        except Exception as e:
+            logger.warning(f"Failed to track user in database: {e}")
+
     return GitHubExchangeResponse(
         access_token=access_token,
         token_type=token_type,
         scope=scope,
         user=user,
+        db_user_id=db_user_id,
     )
 
 
