@@ -2,13 +2,13 @@
 
 > **AI-Powered Code Generation & Repository Management**
 
-Cloud Vibecoder is a full-stack mobile application that uses AI to automatically generate code, create repositories, and implement features based on natural language descriptions. Built with React Native (Expo) and FastAPI, it leverages GPT-4 and E2B sandboxes for intelligent code generation.
+Cloud Vibecoder is a full-stack mobile application that uses AI to automatically generate code, create repositories, and implement features based on natural language descriptions. Built with React Native (Expo), FastAPI backend, and Next.js admin dashboard, it leverages GPT-4 and E2B sandboxes for intelligent code generation with full database tracking via Supabase.
 
 ## ✨ Key Features
 
 ### 🤖 **AI-Driven Development**
 - **Natural Language to Code**: Describe what you want in plain English, get working code
-- **Intelligent Planning**: Generates detailed implementation plans with CRS (Clarifying Requirements Summary)
+- **Intelligent Planning**: Generates detailed implementation plans with CRS (Change Request Specification)
 - **Multi-Step Execution**: Breaks down complex features into manageable steps
 - **Smart Code Generation**: Uses GPT-4 to write, test, and refine code
 
@@ -24,11 +24,12 @@ Cloud Vibecoder is a full-stack mobile application that uses AI to automatically
 - **Pull Request Creation**: Automatic PR generation with detailed descriptions
 - **Commit History**: View all changes and commits made by the AI
 
-### 📊 **Progress Tracking**
+### 📊 **Progress Tracking & Analytics**
 - **Real-Time Updates**: Live progress tracking during code generation
 - **Job Status**: Monitor execution status (pending → executing → completed)
 - **Detailed Results**: View files changed, commits created, and execution metrics
-- **Changes Summary**: Dedicated page to review all modifications
+- **Admin Dashboard**: Full analytics dashboard for monitoring users, jobs, plans, and PRs
+- **Database Tracking**: All activities tracked in Supabase (users, plans, jobs, PRs)
 
 ## 🔄 Complete Workflow
 
@@ -66,75 +67,98 @@ User Prompt → CRS Generation → Plan Synthesis → Code Execution → PR/Repo
                  │ HTTPS/REST API
                  ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                FASTAPI BACKEND (Render)                     │
+│                FASTAPI BACKEND                              │
 │                                                             │
 │  ┌────────────────────────────────────────────────────┐   │
 │  │                 API ENDPOINTS                      │   │
 │  │  • /api/auth/github/*     - OAuth flow           │   │
-│  │  • /api/crs               - Requirements         │   │
+│  │  • /api/crs               - Requirements (CRS)   │   │
 │  │  • /api/plan-synthesis    - Plan generation      │   │
 │  │  • /api/jobs/*            - Code execution       │   │
 │  │  • /api/github/*          - GitHub integration   │   │
+│  │  • /api/admin/*           - Admin endpoints      │   │
 │  └────────────────────────────────────────────────────┘   │
 │                                                             │
 │  ┌────────────────────────────────────────────────────┐   │
 │  │                   SERVICES                         │   │
-│  │  • LLM Service (GPT-4)                            │   │
-│  │  • Orchestration Service                          │   │
-│  │  • GitHub Service                                 │   │
+│  │  • LLM Service (GPT-4)    • Database Service     │   │
+│  │  • Orchestration Service  • VM Service (E2B)     │   │
+│  │  • GitHub Service         • Coding Agent         │   │
 │  │  • Plan Synthesis Service                         │   │
 │  └────────────────────────────────────────────────────┘   │
 └─────────────────┬───────────────────────────────────────────┘
                   │
-    ┌─────────────┴─────────────┐
-    ▼                           ▼
-┌─────────────┐          ┌──────────────┐
-│   E2B       │          │   GitHub     │
-│  Sandbox    │          │     API      │
-│ (Execution) │          │  (Repos/PRs) │
-└─────────────┘          └──────────────┘
+    ┌─────────────┼─────────────┐
+    ▼             ▼             ▼
+┌─────────────┐ ┌──────────┐ ┌──────────────┐
+│   E2B       │ │ Supabase │ │   GitHub     │
+│  Sandbox    │ │    DB    │ │     API      │
+│ (Execution) │ │(Tracking)│ │  (Repos/PRs) │
+└─────────────┘ └──────────┘ └──────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│            ADMIN DASHBOARD (Next.js)                        │
+│  • User Management • Job Monitoring • Plan Analytics       │
+│  • PR Tracking • Metrics Dashboard                         │
+│  • Direct Supabase Connection                              │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ## 📁 Project Structure
 
 ```
 cloud-vibecoder/
-├── backend/
+├── backend/                          # FastAPI Backend
 │   ├── app/
 │   │   ├── api/                      # API endpoints
-│   │   │   ├── auth.py              # GitHub OAuth
-│   │   │   ├── crs.py               # Requirements generation
-│   │   │   ├── plan_synthesis.py    # Plan creation
+│   │   │   ├── auth.py              # GitHub OAuth + user tracking
+│   │   │   ├── crs.py               # CRS generation
+│   │   │   ├── plan_synthesis.py    # Plan creation + tracking
 │   │   │   ├── agent_execution.py   # Job orchestration
-│   │   │   └── github.py            # GitHub operations
+│   │   │   ├── github.py            # GitHub operations + PR tracking
+│   │   │   └── admin.py             # Admin endpoints
 │   │   ├── services/                # Business logic
 │   │   │   ├── llm_service.py       # GPT-4 integration
-│   │   │   ├── orchestration_service.py
+│   │   │   ├── orchestration_service.py  # Job management
 │   │   │   ├── plan_synthesis_service.py
-│   │   │   └── github_service.py
+│   │   │   ├── github_service.py
+│   │   │   ├── vm_service.py        # E2B sandbox management
+│   │   │   └── coding_agent_main.py # AI coding agent
 │   │   ├── models/                  # Pydantic models
 │   │   │   ├── crs_model.py
 │   │   │   ├── plan_model.py
-│   │   │   └── orchestration_model.py
+│   │   │   ├── orchestration_model.py
+│   │   │   └── database.py          # Supabase models & service
 │   │   └── core/                    # Configuration
-│   │       ├── config.py
-│   │       └── logging_config.py
+│   │       └── config.py
 │   ├── main.py                      # FastAPI app
 │   └── requirements.txt
-├── mobile/
+├── mobile/                           # React Native Mobile App
 │   ├── app/
 │   │   ├── (tabs)/                  # Main tab navigation
-│   │   │   ├── index.tsx           # Home/Create screen
-│   │   │   ├── explore.tsx         # Explore screen
-│   │   │   └── profile.tsx         # Profile screen
+│   │   │   └── index.tsx           # Home/Create screen
 │   │   ├── login.tsx               # GitHub OAuth login
-│   │   ├── changes.tsx             # Changes detail view
+│   │   ├── changes.tsx             # Changes detail view + PR approval
+│   │   ├── welcome.tsx             # Welcome/onboarding screen
 │   │   └── _layout.tsx             # Root layout
 │   ├── components/                  # UI components
-│   ├── constants/                   # Theme & config
-│   │   └── theme.ts
-│   ├── services/                    # API clients
-│   │   └── githubService.ts
+│   │   ├── RepoModeSelector.tsx    # New/existing repo toggle
+│   │   └── NewRepoForm.tsx         # New repo configuration
+│   ├── constants/theme.ts          # Design system
+│   ├── services/githubService.ts   # GitHub API client
+│   └── package.json
+├── admin-dashboard/                  # Next.js Admin Dashboard
+│   ├── app/                         # App Router pages
+│   │   ├── page.tsx                # Dashboard home
+│   │   ├── users/page.tsx          # User management
+│   │   ├── jobs/page.tsx           # Job monitoring
+│   │   ├── plans/page.tsx          # Plan analytics
+│   │   └── prs/page.tsx            # PR tracking
+│   ├── components/                  # UI components
+│   │   ├── ui/                     # shadcn/ui components
+│   │   ├── login-page.tsx
+│   │   └── dashboard-layout.tsx
+│   ├── lib/supabase.ts             # Supabase client
 │   └── package.json
 └── README.md
 ```
@@ -142,20 +166,28 @@ cloud-vibecoder/
 ## 🔌 API Endpoints
 
 ### Authentication
-- `POST /api/auth/github/exchange` - Exchange OAuth code for token
+- `POST /api/auth/github/exchange` - Exchange OAuth code for token (returns `db_user_id`)
 - `GET /api/auth/github/callback` - GitHub OAuth callback
 
 ### Code Generation
-- `POST /api/crs` - Generate Clarifying Requirements Summary
-- `POST /api/plan-synthesis/synthesize` - Create implementation plan
-- `POST /api/jobs/create` - Start code generation job
+- `POST /api/crs` - Generate Change Request Specification
+- `POST /api/plan-synthesis` - Create implementation plan (tracks in DB)
+- `POST /api/jobs/create` - Start code generation job (tracks in DB)
 - `GET /api/jobs/{job_id}/progress` - Get job status
 - `GET /api/jobs/{job_id}/result` - Get job results
 
 ### GitHub Operations
-- `POST /api/github/create-pr` - Create pull request
+- `POST /api/github/create-pr` - Create pull request (tracks in DB)
 - `POST /api/github/commits` - Get branch commits
 - `POST /api/github/parse-url` - Parse repository URL
+
+### Admin (requires authentication)
+- `GET /api/admin/metrics` - Get aggregated metrics
+- `GET /api/admin/users` - List all users
+- `GET /api/admin/users/{id}` - Get user details with activity
+- `GET /api/admin/jobs` - List all job records
+- `GET /api/admin/plans` - List all plan records
+- `GET /api/admin/prs` - List all PR records
 
 ## 🚀 Quick Start
 
@@ -165,10 +197,12 @@ cloud-vibecoder/
 - **Python** (v3.11 or higher)
 - **Expo CLI** (`npm install -g expo-cli`)
 - **GitHub Account** (for OAuth)
+- **Supabase Project** (for database)
 - **API Keys**:
   - OpenAI API Key (GPT-4 access)
   - E2B API Key (code execution)
   - GitHub OAuth App (Client ID & Secret)
+  - Supabase URL & Anon Key
 
 ### 1. Clone Repository
 
@@ -186,8 +220,6 @@ Create `backend/.env`:
 ```env
 # OpenAI Configuration
 OPENAI_API_KEY=sk-proj-...
-OPENAI_BASE_URL=https://api.openai.com/v1
-LLM_MODEL=gpt-4o-mini
 
 # GitHub OAuth
 GITHUB_CLIENT_ID=your_client_id
@@ -196,8 +228,12 @@ GITHUB_CLIENT_SECRET=your_client_secret
 # E2B Sandbox
 E2B_API_KEY=your_e2b_key
 
-# CORS (optional for local dev)
-CORS_ORIGINS=http://localhost:8081,http://localhost:19006
+# Supabase (required for database tracking)
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_KEY=your_supabase_anon_key
+
+# Admin
+ADMIN_SECRET_KEY=your_secret_key
 ```
 
 #### Install & Run
@@ -206,8 +242,8 @@ CORS_ORIGINS=http://localhost:8081,http://localhost:19006
 cd backend
 
 # Create virtual environment
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
@@ -225,7 +261,8 @@ Backend will be available at `http://localhost:8000`
 Create `mobile/.env`:
 
 ```env
-EXPO_PUBLIC_API_URL=https://cloud-vibecoder-1.onrender.com
+# For local development, use your machine's IP address
+EXPO_PUBLIC_API_URL=http://YOUR_IP:8000
 EXPO_PUBLIC_GITHUB_CLIENT_ID=your_client_id
 GITHUB_CLIENT_SECRET=your_client_secret
 GITHUB_CLIENT_ID=your_client_id
@@ -239,8 +276,8 @@ cd mobile
 # Install dependencies
 npm install
 
-# Start Expo development server
-npm start
+# Start Expo development server (clear cache for env changes)
+npx expo start --clear
 ```
 
 Expo dev tools will open. You can:
@@ -249,7 +286,36 @@ Expo dev tools will open. You can:
 - Press `w` for web browser
 - Scan QR code with Expo Go app on your phone
 
-### 4. GitHub OAuth Setup
+### 4. Admin Dashboard Setup
+
+#### Environment Variables
+
+Create `admin-dashboard/.env.local`:
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+NEXT_PUBLIC_ADMIN_SECRET_KEY=your_admin_secret
+```
+
+#### Install & Run
+
+```bash
+cd admin-dashboard
+
+# Install dependencies
+npm install
+
+# Build for production
+npm run build
+
+# Start server
+npm start
+```
+
+Admin dashboard will be available at `http://localhost:3000`
+
+### 5. GitHub OAuth Setup
 
 1. Go to [GitHub Developer Settings](https://github.com/settings/developers)
 2. Create a new OAuth App:
@@ -308,11 +374,18 @@ Expo dev tools will open. You can:
 - **Deployment**: Render (auto-deploy from GitHub)
 - **CORS**: Configured for mobile app origins
 
+### Admin Dashboard
+- **Framework**: Next.js 14 (App Router)
+- **Language**: TypeScript
+- **UI**: Tailwind CSS + shadcn/ui
+- **Data Fetching**: TanStack Query
+- **Database**: Direct Supabase connection
+
 ### External Services
 - **GitHub API**: Repository management, PR creation
 - **OpenAI API**: GPT-4 for code generation
 - **E2B API**: Secure code execution environment
-- **Render**: Backend hosting and deployment
+- **Supabase**: PostgreSQL database for tracking
 
 ## 🔒 Security
 
@@ -365,17 +438,12 @@ For questions or support, please open an issue on GitHub.
 If you find this project useful, please consider giving it a star on GitHub!
 
 ### ✅ What's Working
-- Mobile app with clean UI
-- Backend API deployed and accessible
-- Environment-based configuration
-- Cross-platform compatibility
-- Mock response generation
-
-### 🚧 What's Next (Future Development)
-- **AI Integration**: Replace mock responses with actual AI-powered code analysis
-- **Repository Analysis**: Connect to GitHub API to analyze actual code
-- **Code Generation**: Generate actual code changes based on prompts
-- **Git Integration**: Create actual pull requests with proposed changes
+- Full end-to-end AI code generation workflow
+- Mobile app with GitHub OAuth and repository management
+- Backend API with GPT-4 integration and E2B sandboxed execution
+- Database tracking for users, plans, jobs, and PRs via Supabase
+- Admin dashboard for monitoring and analytics
+- Automatic PR creation with detailed change summaries
 
 ## Troubleshooting
 
