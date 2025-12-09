@@ -2,7 +2,7 @@
 
 > **AI-Powered Code Generation & Repository Management**
 
-Cloud Vibecoder is an AI powered development tool that transforms natural language into real software. It automatically creates and updates GitHub repositories, generates full implementation plans, writes code with GPT 4, and executes changes in secure cloud environments. Track progress in real time and instantly review pull requests or new repos with commits and branches already set up.
+Cloud Vibecoder is a full-stack mobile application that uses AI to automatically generate code, create repositories, and implement features based on natural language descriptions. Built with React Native (Expo) and FastAPI, it leverages GPT-4 and E2B sandboxes for intelligent code generation.
 
 ## ✨ Key Features
 
